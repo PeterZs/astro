@@ -78,9 +78,9 @@ int main(int argc, char *argv[]) {
 
     //compute the maximum differences of the input images' image, mask, and variance values
     //write an output image whose values are image1-image2 
-    float maxImageDiff = 0;
-    float maxImageDiffPercent = 0;
-    float valueAtMaxImageDiff = 0;
+    double maxImageDiff = 0;
+    double maxImageDiffPercent = 0;
+    double valueAtMaxImageDiff = 0;
     float maxVarianceDiff = 0;
     int maxMaskDiff = 0;
 
@@ -100,7 +100,7 @@ int main(int argc, char *argv[]) {
         	afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel(image1(x, y) - image2(x, y), variance1(x, y) - variance2(x, y), mask1(x, y) - mask2(x, y));
         	(*inPtr) = curPixel;
         	inPtr++;
-            if(abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxImageDiff){
+            if(abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxImageDiffPercent){
                 maxImageDiffPercent = abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
                 maxImageDiff = abs(image1(x, y) - image2(x, y));
                 valueAtMaxImageDiff = min(abs(image1(x, y)), abs(image2(x, y)));
