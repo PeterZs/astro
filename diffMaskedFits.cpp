@@ -79,6 +79,8 @@ int main(int argc, char *argv[]) {
     //compute the maximum differences of the input images' image, mask, and variance values
     //write an output image whose values are image1-image2 
     float maxImageDiff = 0;
+    float maxImageDiffPercent = 0;
+    float valueAtMaxImageDiff = 0;
     float maxVarianceDiff = 0;
     int maxMaskDiff = 0;
 
@@ -99,7 +101,9 @@ int main(int argc, char *argv[]) {
         	(*inPtr) = curPixel;
         	inPtr++;
             if(abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxImageDiff){
-                maxImageDiff = abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
+                maxImageDiffPercent = abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
+                maxImageDiff = abs(image1(x, y) - image2(x, y));
+                valueAtMaxImageDiff = min(abs(image1(x, y)), abs(image2(x, y)));
             }
             if(abs(variance1(x, y) - variance2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxVarianceDiff)
                 maxVarianceDiff = abs(variance1(x, y) - variance2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
@@ -122,7 +126,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    cout << "Max (image difference)/(min img value) = " << maxImageDiff << ", max (variance difference)/(min var value) = " 
+    cout << "Max (image difference)/(min img value) = " << maxImageDiffPercent << ",  Max image difference = " << maxImageDiff
+    << ", value at max image difference = " << valueAtMaxImageDiff << endl << "max (variance difference)/(min var value) = " 
     << maxVarianceDiff << ", max mask difference = " << maxMaskDiff << endl;
 
     cout << "Max image1 = " << maxImage1 << ", max variance1 = " << maxVariance1 << 
