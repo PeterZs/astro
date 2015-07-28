@@ -1,0 +1,136 @@
+// On os x:
+//
+//g++ -I DarwinX86/pex_policy/10.1+1/include/ -I DarwinX86/daf_persistence/10.1+1/include/ -I DarwinX86/utils/10.1+1/include/ -I DarwinX86/daf_base/10.1+2/include/ -I DarwinX86/base/10.1+1/include/ -I DarwinX86/ndarray/10.1+2/include/ -I DarwinX86/pex_exceptions/10.1+1/include/ -I DarwinX86/eigen/3.2.0/include/ -I DarwinX86/afw/10.1+1/include -I ./include -L DarwinX86/afw/10.1+1/lib -L DarwinX86/daf_base/10.1+2/lib/ -L DarwinX86/daf_persistence/10.1+1/lib/ -L DarwinX86/boost/1.55.0.1.lsst2+3/lib/ -L ./bin test.cpp -lafw -ldaf_base -ldaf_persistence -lboost_system -lHalide `libpng-config --cflags --ldflags` -o test
+//
+//DYLD_LIBRARY_PATH=DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/:./bin ./test
+//
+// On linux, you can compile and run it like so:
+//g++ -I DarwinX86/pex_policy/10.1+1/include/ -I DarwinX86/daf_persistence/10.1+1/include/ -I DarwinX86/utils/10.1+1/include/ -I DarwinX86/daf_base/10.1+2/include/ -I DarwinX86/base/10.1+1/include/ -I DarwinX86/ndarray/10.1+2/include/ -I DarwinX86/pex_exceptions/10.1+1/include/ -I DarwinX86/eigen/3.2.0/include/ -I DarwinX86/afw/10.1+1/include -I ./include -L DarwinX86/afw/10.1+1/lib -L DarwinX86/daf_base/10.1+2/lib/ -L DarwinX86/daf_persistence/10.1+1/lib/ -L DarwinX86/boost/1.55.0.1.lsst2+3/lib/ -L ./bin test.cpp -lafw -ldaf_base -ldaf_persistence -lboost_system -lHalide `libpng-config --cflags --ldflags` -lpthread -ldl -o test
+//
+//LD_LIBRARY_PATH=DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/:./bin ./test
+//
+// On os x:
+// g++ test.cpp -g -I ./include -L ./bin -lHalide `libpng-config --cflags --ldflags` -o test -std=c++11
+// DYLD_LIBRARY_PATH=../bin ./test
+
+
+//CORRECT BELOW!
+// On os x:
+// g++ diffMaskedFits.cpp -g -I ./include -I DarwinX86/pex_policy/10.1+1/include/ -I DarwinX86/daf_persistence/10.1+1/include/ -I DarwinX86/utils/10.1+1/include/ -I DarwinX86/daf_base/10.1+2/include/ -I DarwinX86/base/10.1+1/include/ -I DarwinX86/ndarray/10.1+2/include/ -I DarwinX86/pex_exceptions/10.1+1/include/ -I DarwinX86/eigen/3.2.0/include/ -I DarwinX86/afw/10.1+1/include -L ./bin -L DarwinX86/afw/10.1+1/lib -L DarwinX86/daf_base/10.1+2/lib/ -L DarwinX86/daf_persistence/10.1+1/lib/ -L DarwinX86/boost/1.55.0.1.lsst2+3/lib/ -lHalide -lafw -ldaf_base -ldaf_persistence -lboost_system `libpng-config --cflags --ldflags` -o diffMaskedFits -std=c++11
+//
+// DYLD_LIBRARY_PATH=./bin:DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/ ./diffMaskedFits
+
+
+
+#include "lsst/afw/image.h"
+#include <stdio.h>
+
+#include "Halide.h"
+using namespace std;
+using namespace Halide;
+
+using Halide::Image;
+
+namespace afwImage = lsst::afw::image;
+namespace afwMath  = lsst::afw::math;
+
+
+int main(int argc, char *argv[]) {
+	auto im1 = afwImage::MaskedImage<float>(argv[1]);
+    printf("Loaded: %d x %d\n", im1.getWidth(), im1.getHeight());
+    Image<float> image1(im1.getWidth(), im1.getHeight());
+    Image<float> variance1(im1.getWidth(), im1.getHeight());
+    Image<uint16_t> mask1(im1.getWidth(), im1.getHeight());
+
+    auto im2 = afwImage::MaskedImage<float>(argv[2]);
+    printf("Loaded: %d x %d\n", im2.getWidth(), im2.getHeight());
+    Image<float> image2(im2.getWidth(), im2.getHeight());
+    Image<float> variance2(im2.getWidth(), im2.getHeight());
+    Image<uint16_t> mask2(im2.getWidth(), im2.getHeight());
+
+
+    //Read image1 in
+    for (int y = 0; y < im1.getHeight(); y++) {
+    	afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>::x_iterator inPtr = im1.x_at(0, y);
+	   	for (int x = 0; x < im1.getWidth(); x++){
+       		image1(x, y) = (*inPtr).image();
+      		variance1(x, y) = (*inPtr).variance();
+     		mask1(x, y) = (*inPtr).mask();
+     		inPtr++;
+        }
+    }
+
+    //Read image2 in
+    for (int y = 0; y < im2.getHeight(); y++) {
+        afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>::x_iterator inPtr = im2.x_at(0, y);
+        for (int x = 0; x < im2.getWidth(); x++){
+            image2(x, y) = (*inPtr).image();
+            variance2(x, y) = (*inPtr).variance();
+            mask2(x, y) = (*inPtr).mask();
+            inPtr++;
+        }
+    }
+
+    if((im1.getWidth() != im2.getWidth()) || (im2.getHeight() != im2.getHeight())){
+        cout << "image sizes do not match" << endl;
+        return 0;
+    }
+
+    //compute the maximum differences of the input images' image, mask, and variance values
+    //write an output image whose values are image1-image2 
+    float maxImageDiff = 0;
+    float maxVarianceDiff = 0;
+    int maxMaskDiff = 0;
+
+    float maxImage1 = 0;
+    float maxVariance1 = 0;
+    int maxMask1 = 0;
+
+    float maxImage2 = 0;
+    float maxVariance2 = 0;
+    int maxMask2 = 0;
+
+    auto imDiff = afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>(im1.getWidth(), im1.getHeight());
+    for (int y = 0; y < imDiff.getHeight(); y++) {
+    	afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>::x_iterator inPtr = imDiff.x_at(0, y);
+
+        for (int x = 0; x < imDiff.getWidth(); x++){
+        	afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel(image1(x, y) - image2(x, y), variance1(x, y) - variance2(x, y), mask1(x, y) - mask2(x, y));
+        	(*inPtr) = curPixel;
+        	inPtr++;
+            if(abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxImageDiff){
+                maxImageDiff = abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
+            }
+            if(abs(variance1(x, y) - variance2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxVarianceDiff)
+                maxVarianceDiff = abs(variance1(x, y) - variance2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
+            if(abs(mask1(x, y) - mask2(x, y)) > maxMaskDiff)
+                maxMaskDiff = abs(mask1(x, y) - mask2(x, y));
+
+            if(abs(image1(x, y)) > maxImage1)
+                maxImage1 = abs(image1(x, y));
+            if(abs(variance1(x, y)) > maxVariance1)
+                maxVariance1 = abs(variance1(x, y));
+            if(mask1(x, y) > maxMask1)
+                maxMask1 = mask1(x, y);
+
+            if(abs(image2(x, y)) > maxImage2)
+                maxImage2 = abs(image2(x, y));
+            if(abs(variance2(x, y)) > maxVariance2)
+                maxVariance2 = abs(variance2(x, y));
+            if(mask2(x, y) > maxMask2)
+                maxMask2 = mask2(x, y);
+        }
+    }
+
+    cout << "Max (image difference)/(min img value) = " << maxImageDiff << ", max (variance difference)/(min var value) = " 
+    << maxVarianceDiff << ", max mask difference = " << maxMaskDiff << endl;
+
+    cout << "Max image1 = " << maxImage1 << ", max variance1 = " << maxVariance1 << 
+    ", max mask1 = " << maxMask1 << endl;
+
+    cout << "Max image2 = " << maxImage2 << ", max variance2 = " << maxVariance2 << 
+    ", max mask2 = " << maxMask2 << endl;
+
+	imDiff.writeFits("./imageDifference.fits");
+}
+
