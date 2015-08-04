@@ -36,6 +36,10 @@ namespace afwMath  = lsst::afw::math;
 
 
 int main(int argc, char *argv[]) {
+    if(argc != 3){
+        cout << "error, must supply two .fits files as arguments" << endl;
+        return 0;
+    }
 	auto im1 = afwImage::MaskedImage<float>(argv[1]);
     printf("Loaded: %d x %d\n", im1.getWidth(), im1.getHeight());
     Image<float> image1(im1.getWidth(), im1.getHeight());
@@ -81,8 +85,20 @@ int main(int argc, char *argv[]) {
     double maxImageDiff = 0;
     double maxImageDiffPercent = 0;
     double valueAtMaxImageDiff = 0;
-    float maxVarianceDiff = 0;
+    int imageX = -1;
+    int imageY = -1;
+
+    double maxVarianceDiff = 0;
+    double maxVarianceDiffPercent = 0;
+    double valueAtMaxVarianceDiff = 0;
+    int varianceX = -1;
+    int varianceY = -1;
+
     int maxMaskDiff = 0;
+    int maskX = -1;
+    int maskY = -1;
+    int mask1Val = -1;
+    int mask2Val = -1;
 
     float maxImage1 = 0;
     float maxVariance1 = 0;
@@ -93,10 +109,10 @@ int main(int argc, char *argv[]) {
     int maxMask2 = 0;
 
     auto imDiff = afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>(im1.getWidth(), im1.getHeight());
-    for (int y = 0; y < imDiff.getHeight(); y++) {
+    for (int y = 5; y < imDiff.getHeight()-5; y++) {
     	afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>::x_iterator inPtr = imDiff.x_at(0, y);
 
-        for (int x = 0; x < imDiff.getWidth(); x++){
+        for (int x = 5; x < imDiff.getWidth()-5; x++){
         	afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel(image1(x, y) - image2(x, y), variance1(x, y) - variance2(x, y), mask1(x, y) - mask2(x, y));
         	(*inPtr) = curPixel;
         	inPtr++;
@@ -104,11 +120,23 @@ int main(int argc, char *argv[]) {
                 maxImageDiffPercent = abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
                 maxImageDiff = abs(image1(x, y) - image2(x, y));
                 valueAtMaxImageDiff = min(abs(image1(x, y)), abs(image2(x, y)));
+                imageX = x;
+                imageY = y;
             }
-            if(abs(variance1(x, y) - variance2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxVarianceDiff)
-                maxVarianceDiff = abs(variance1(x, y) - variance2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
-            if(abs(mask1(x, y) - mask2(x, y)) > maxMaskDiff)
+            if(abs(variance1(x, y) - variance2(x, y))/min(abs(variance1(x, y)), abs(variance2(x, y))) > maxVarianceDiff){
+                maxVarianceDiffPercent = abs(variance1(x, y) - variance2(x, y))/min(abs(variance1(x, y)), abs(variance2(x, y)));
+                maxVarianceDiff = abs(variance1(x, y) - variance2(x, y));
+                valueAtMaxVarianceDiff = min(abs(variance1(x, y)), abs(variance2(x, y)));
+                varianceX = x;
+                varianceY = y;
+            }
+            if(abs(mask1(x, y) - mask2(x, y)) > maxMaskDiff){
                 maxMaskDiff = abs(mask1(x, y) - mask2(x, y));
+                maskX = x;
+                maskY = y;
+                mask1Val = mask1(x, y);
+                mask2Val = mask2(x, y);
+            }
 
             if(abs(image1(x, y)) > maxImage1)
                 maxImage1 = abs(image1(x, y));
@@ -127,8 +155,15 @@ int main(int argc, char *argv[]) {
     }
 
     cout << "Max (image difference)/(min img value) = " << maxImageDiffPercent << ",  Max image difference = " << maxImageDiff
-    << ", value at max image difference = " << valueAtMaxImageDiff << endl << "max (variance difference)/(min var value) = " 
-    << maxVarianceDiff << ", max mask difference = " << maxMaskDiff << endl;
+    << ", value at max image difference = " << valueAtMaxImageDiff << " at position: (" << imageX << ", " << imageY
+    << ")" <<endl;
+
+    cout << "Max (variance difference)/(min var value) = " << maxVarianceDiffPercent << ",  Max Variance difference = " << maxVarianceDiff
+    << ", value at max Variance difference = " << valueAtMaxVarianceDiff << " at position: (" << varianceX << ", ";
+    cout << varianceY << ")" << endl;
+
+    cout << "Max mask difference = " << maxMaskDiff << " at position: (" << maskX << ", " << maskY << ")" << 
+    ", img1 mask = " << mask1Val << ", img2 mask = " << mask2Val << endl;
 
     cout << "Max image1 = " << maxImage1 << ", max variance1 = " << maxVariance1 << 
     ", max mask1 = " << maxMask1 << endl;
