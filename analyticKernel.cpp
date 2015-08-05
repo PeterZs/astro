@@ -66,15 +66,16 @@ int main(int argc, char *argv[]) {
     printf("Loaded: %d x %d\n", im.getWidth(), im.getHeight());
 
     //store image data in img_var(x, y, 0) and variance data in img_var(x, y, 1)
-    Image<float> img_var(im.getWidth(), im.getHeight(), 2);
+    Image<float> image(im.getWidth(), im.getHeight());
+    Image<float> variance(im.getWidth(), im.getHeight());
     Image<uint16_t> mask(im.getWidth(), im.getHeight());
 
     //Read image in
     for (int y = 0; y < im.getHeight(); y++) {
     	afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = im.x_at(0, y);
 	   	for (int x = 0; x < im.getWidth(); x++){
-       		img_var(x, y, 0) = (*inPtr).image();
-      		img_var(x, y, 1) = (*inPtr).variance();
+       		image(x, y) = (*inPtr).image();
+      		variance(x, y) = (*inPtr).variance();
      		mask(x, y) = (*inPtr).mask();
      		inPtr++;
         }
@@ -116,45 +117,50 @@ int main(int argc, char *argv[]) {
     }
     norm(x, y) = norm_help;
 
-    Func img_var_bounded = BoundaryConditions::repeat_edge(img_var);
+    Func image_bounded = BoundaryConditions::repeat_edge(image);
+    Func variance_bounded = BoundaryConditions::repeat_edge(variance);
 
-    Func blur;
-    blur(x, y, i_v) = 0.0f;
+    Func blurImage;
     //compute Image output
     Expr blur_image_help = 0.0f;
     for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help += img_var_bounded(x + i, y + j, 0) * kernel(x, y, i, j); 
+            blur_image_help += image_bounded(x + i, y + j) * kernel(x, y, i, j); 
         }
     }
     blur_image_help = blur_image_help/norm(x, y);
-    blur(x, y, 0) = blur_image_help;
+    blurImage(x, y) = blur_image_help;
 
 
     //compute Variance output
+    Func blurVariance;
     Expr blur_variance_help = 0.0f;
     for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_variance_help += img_var_bounded(x + i, y + j, 1) * kernel(x, y, i, j) * kernel(x, y, i, j); 
+            blur_variance_help += variance_bounded(x + i, y + j) * kernel(x, y, i, j) * kernel(x, y, i, j); 
         }
     }
     blur_variance_help = blur_variance_help/(norm(x,y)*norm(x,y));
-    blur(x, y, 1) = blur_variance_help;
+    blurVariance(x, y) = blur_variance_help;
 
     //Schedule
   //  blur.reorder(i_v, x, y);
-    // Split the y coordinate of the consumer into strips of 16 scanlines:
-    blur.split(y, y0, yi, 40);
+    // Split the y coordinate of the consumer into strips:
+    blurImage.split(y, y0, yi, 4);
+    blurVariance.split(y, y0, yi, 4);
     // Compute the strips using a thread pool and a task queue.
-    blur.parallel(y0);
+    blurImage.parallel(y0);
+    blurVariance.parallel(y0);
     // Vectorize across x by a factor of four.
-    blur.vectorize(x, 8);
+    blurImage.vectorize(x, 8);
+    blurVariance.vectorize(x, 8);
 
 //    polynomial.compute_at(blur, x).vectorize(x, 8);
 
 
     // Print out pseudocode for the pipeline.
-    blur.compile_to_lowered_stmt("blur.html", {img_var}, HTML);
+//    blurImage.compile_to_lowered_stmt("blur.html", {image}, HTML);
+//    blurVariance.compile_to_lowered_stmt("blur.html", {variance}, HTML);
 
 
     //testing
@@ -252,8 +258,11 @@ int main(int argc, char *argv[]) {
 
     
     // Benchmark the pipeline.
-    Image<float> img_var_output(img_var.width(), img_var.height(), 2);
-    blur.realize(img_var_output);
+    Image<float> image_output(image.width(), image.height());
+    blurImage.realize(image_output);
+
+    Image<float> variance_output(variance.width(), variance.height());
+    blurVariance.realize(variance_output);
 
     Image<int32_t> mask_output(mask.width(), mask.height());
     maskOut.realize(mask_output);
@@ -261,21 +270,34 @@ int main(int argc, char *argv[]) {
     double average = 0;
     double min;
     double max;
+    double imgTime;
+    double varTime;
+    double maskTime;
     int numberOfRuns = 5;
     for (int i = 0; i < numberOfRuns; i++) {
         double t1 = current_time();
-        blur.realize(img_var_output);
-        maskOut.realize(mask_output);
+        blurImage.realize(image_output);
         double t2 = current_time();
-        double curTime = (t2-t1);
+        blurVariance.realize(variance_output);
+        double t3 = current_time();
+        maskOut.realize(mask_output);
+        double t4 = current_time();
+        double curTime = (t4-t1);
         average += curTime;
         if(i == 0){
             min = curTime;
             max = curTime;
+            imgTime = t2-t1;
+            varTime = t3-t2;
+            maskTime = t4-t3;
         }
         else{
-            if(curTime < min)
+            if(curTime < min){
                 min = curTime;
+                imgTime = t2-t1;
+                varTime = t3-t2;
+                maskTime = t4-t3;
+            }
             if(curTime > max)
                 max = curTime;
         }
@@ -284,6 +306,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Average Time: " << average << ", Min = " <<
     min << ", Max = " << max << ", with " << numberOfRuns <<
     " runs" << '\n';
+    cout << "For fastest run total time = " << min << ", imgTime = " << imgTime << ", varTime = " << varTime << 
+    "maskTime = " << maskTime << endl;
 
 //    blur_mask.realize(mask_output);
 
@@ -294,7 +318,7 @@ int main(int argc, char *argv[]) {
 
         for (int x = 0; x < imOut.getWidth(); x++){
         	afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
-            curPixel(img_var_output(x, y, 0), mask_output(x, y), img_var_output(x, y, 1));
+            curPixel(image_output(x, y), mask_output(x, y), variance_output(x, y));
         	(*inPtr) = curPixel;
         	inPtr++;
 
