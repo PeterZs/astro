@@ -30,7 +30,7 @@ namespace afwMath  = lsst::afw::math;
 
 int main(int argc, char *argv[]) {
 
-
+    //This image has 3 planes (image, mask, variance) and dimensions 2048 x 1489
     auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
     printf("Loaded: %d x %d\n", im.getWidth(), im.getHeight());
 
