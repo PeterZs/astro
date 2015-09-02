@@ -18,7 +18,7 @@ namespace afwImage = lsst::afw::image;
 namespace afwMath  = lsst::afw::math;
 
 int main(int argc, char **argv) {
-	auto im = afwImage::MaskedImage<float>("../calexp-004207-g3-0123.fits");
+	auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
     printf("Loaded: %d x %d\n", im.getWidth(), im.getHeight());
 
     //store image data in img_var(x, y)
@@ -170,7 +170,7 @@ int main(int argc, char **argv) {
         }
     }
 
-	imOut.writeFits("./halideSimple.fits");
+	imOut.writeFits("./images/halideSimple.fits");
 
 
     double average = 0;

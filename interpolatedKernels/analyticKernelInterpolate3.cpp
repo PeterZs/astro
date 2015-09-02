@@ -31,7 +31,7 @@ namespace afwMath  = lsst::afw::math;
 int main(int argc, char *argv[]) {
 
 
-    auto im = afwImage::MaskedImage<float>("../calexp-004207-g3-0123.fits");
+    auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
     printf("Loaded: %d x %d\n", im.getWidth(), im.getHeight());
 
     //store image data in img_var(x, y, 0) and variance data in img_var(x, y, 1)
@@ -226,9 +226,9 @@ int main(int argc, char *argv[]) {
 
 
     // Print out pseudocode for the pipeline.
-    blurImage.compile_to_lowered_stmt("./InterpolateSchedules/imageSchedule.html", {image}, HTML);
-    blurVariance.compile_to_lowered_stmt("analyticKernelInterpolate3BlurVariance.html", {variance}, HTML);
-    maskOut.compile_to_lowered_stmt("analyticKernelInterpolate3BlurMask.html", {mask}, HTML);
+//    blurImage.compile_to_lowered_stmt("./InterpolateSchedules/imageSchedule.html", {image}, HTML);
+//    blurVariance.compile_to_lowered_stmt("analyticKernelInterpolate3BlurVariance.html", {variance}, HTML);
+//    maskOut.compile_to_lowered_stmt("analyticKernelInterpolate3BlurMask.html", {mask}, HTML);
 //    blurImage.compile_to_c("analyticKernelInterpolate3_C_Code.cpp", std::vector<Argument>(), "analyticKernelInterpolate3_C_Code");
 //    blurVariance.compile_to_lowered_stmt("blur.html", {variance}, HTML);
 
@@ -301,7 +301,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    imOut.writeFits("./halideAnalyticKernelInterpolate3.fits");
+    imOut.writeFits("./images/halideAnalyticKernelInterpolate3.fits");
 }
 
 
