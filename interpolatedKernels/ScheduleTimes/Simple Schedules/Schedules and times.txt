@@ -1,0 +1,70 @@
+Program:
+
+kernel(x, y) = exp(x*x/(y+10.0f))/(x*y+10.0f);
+kernel1(x, y) = exp(x*x/(y+10.0f))/(x*y+10.0f);
+
+blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+
+
+
+1. No schedule: Over 5 runs, average image time = 48.9688 average variance time = 38.0752
+
+
+2. Fast, no interpolation schedule: Over 5 runs, average image time = 7.0428 average variance time = 5.2294
+    blur_image.split(y, y0, yi, 4);
+    blur_variance.split(y, y0, yi, 4);
+
+    blur_image.parallel(y0);
+    blur_variance.parallel(y0);
+
+    blur_image.vectorize(x, 8);
+    blur_variance.vectorize(x, 8);
+
+
+
+3. Kernel compute_root: Over 5 runs, average image time = 4.6986 average variance time = 45.399
+	kernel.compute_root();
+    kernel1.compute_root();
+    blur_image.split(y, y0, yi, 4);
+    blur_variance.split(y, y0, yi, 4);
+
+    blur_image.parallel(y0);
+    blur_variance.parallel(y0);
+
+    blur_image.vectorize(x, 8);
+    blur_variance.vectorize(x, 8);
+
+
+
+4. Constant image kernel: Over 5 runs, average image time = 1.9554 average variance time = 8.1544
+	Program:
+		kernel(x, y) = exp(x*x/(y+10.0f))/(x*y+10.0f);
+		kernel1(x, y) = exp(x*x/(y+10.0f))/(x*y+10.0f);
+		
+		blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+	Schedule:
+		blur_image.split(y, y0, yi, 4);
+	    blur_variance.split(y, y0, yi, 4);
+	
+	    blur_image.parallel(y0);
+	    blur_variance.parallel(y0);
+	
+	    blur_image.vectorize(x, 8);
+	    blur_variance.vectorize(x, 8);
+
+5. Kernel compute_at(x): Over 5 runs, average image time = 6.908 average variance time = 20.3248
+	Schedule:
+    	kernel.compute_at(blur_image, x).store_at(blur_image, y0);
+    	kernel1.compute_at(blur_variance, x).store_at(blur_variance, y0);
+
+    	blur_image.split(y, y0, yi, 10);
+    	blur_variance.split(y, y0, yi, 10);
+
+    	blur_image.parallel(y0);
+    	blur_variance.parallel(y0);
+
+    	blur_image.vectorize(x, 8);
+    	blur_variance.vectorize(x, 8);
+	

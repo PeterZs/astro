@@ -1,0 +1,88 @@
+Image plane is computed using interpolation
+Variance plane is computed without interpolation
+Schedules 1-5 correspond with the schedules from intermediate/simple, with the addition of
+    kernel1.reorder(i, j, x, y);
+    interpKernel.reorder(i, j, x, y);
+    kernel.reorder(i, j, x, y);
+
+1. No schedule: imgTime = 6244.42, varTime = 1033.17maskTime
+2. Fast, no interpolation schedule: imgTime = 588.998, varTime = 120.422
+3. Kernel compute_root: imgTime = 251.849, varTime = 161.671
+(Only image compute root, didn't want to wait for non-interpolated kernel to compute root)
+	Schedule:
+        kernel1.reorder(i, j, x, y);
+        interpKernel.reorder(i, j, x, y);
+        kernel.reorder(i, j, x, y);
+        kernel1.compute_root();
+ 
+        blurImage.split(y, y0, yi, 10);
+        blurImage.parallel(y0);
+        blurImage.vectorize(x, 8);
+
+        blurVariance.split(y, y0, yi, 10);
+        blurVariance.parallel(y0);
+        blurVariance.vectorize(x, 8);
+
+
+4. Constant image kernel: imgTime = 35.043, varTime = 114.513
+
+5. Kernel compute_at(x): imgTime = 182.099, varTime = 95.755
+
+
+Not following numbering from intermediate/simple below:
+6. Tile image, compute_at: imgTime = 344.209, varTime = 96.136
+	Schedule:
+        kernel1.compute_at(blurImage, x_inner).store_at(blurImage, tile_index);
+
+        blurImage
+        .tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .vectorize(x_inner, 4);
+
+        blurVariance.split(y, y0, yi, 10);
+        blurVariance.parallel(y0);
+        blurVariance.vectorize(x, 8);
+
+6b. Tile image 20x20, compute_at:imgTime = 313.961, varTime = 125.709
+	Schedule:
+        kernel1.compute_at(blurImage, x_inner).store_at(blurImage, tile_index);
+
+        blurImage
+        .tile(x, y, x_outer, y_outer, x_inner, y_inner, 20, 20)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .vectorize(x_inner, 4);
+
+        blurVariance.split(y, y0, yi, 10);
+        blurVariance.parallel(y0);
+        blurVariance.vectorize(x, 8);
+
+7. Tile image 20x20, compute_root: imgTime = 272.731, varTime = 127.697
+        kernel1.compute_root();
+
+        blurImage
+        .tile(x, y, x_outer, y_outer, x_inner, y_inner, 20, 20)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .vectorize(x_inner, 4);
+
+        blurVariance.split(y, y0, yi, 10);
+        blurVariance.parallel(y0);
+        blurVariance.vectorize(x, 8);
+
+
+8. Tile image 20x20, compute_root, unroll: imgTime = 309.156, varTime = 111.566 (interestingly took much longer to run than 6-7, I assume because first run before timing took a lot longer)
+        kernel1.compute_root();
+
+        blurImage
+        .tile(x, y, x_outer, y_outer, x_inner, y_inner, 20, 20)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .fuse(x_inner, y_inner, fused)
+            .vectorize(fused, 4)
+            .unroll(fused, 25);
+
+        blurVariance.split(y, y0, yi, 10);
+        blurVariance.parallel(y0);
+        blurVariance.vectorize(x, 8);

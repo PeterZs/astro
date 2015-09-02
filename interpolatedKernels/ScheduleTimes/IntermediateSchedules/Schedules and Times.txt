@@ -1,0 +1,402 @@
+1. No schedule: Over 5 runs, average image time = 195.133 average variance time = 192.297
+	Program:
+		kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                        cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+	    kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+	                        cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+	
+	    blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+	Schedule:
+
+
+2. Fast, no interpolation schedule: Over 5 runs, average image time = 45.8788 average variance time = 46.603
+	Program:
+		kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                        cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+	    kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+	                        cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+	
+	    blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+	Schedule:
+    	blur_image.split(y, y0, yi, 10);
+    	blur_variance.split(y, y0, yi, 10);
+
+    	blur_image.parallel(y0);
+    	blur_variance.parallel(y0);
+
+    	blur_image.vectorize(x, 8);
+    	blur_variance.vectorize(x, 8);
+
+3. Kernel compute_root: Over 5 runs, average image time = 5.958 average variance time = 190.226
+	Program:
+		kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                        cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+	    kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+	                        cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+	
+	    blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+	Schedule:
+		kernel.compute_root();
+    	kernel1.compute_root();
+
+    	blur_image.split(y, y0, yi, 10);
+    	blur_variance.split(y, y0, yi, 10);
+
+    	blur_image.parallel(y0);
+    	blur_variance.parallel(y0);
+
+    	blur_image.vectorize(x, 8);
+    	blur_variance.vectorize(x, 8);
+
+4. Constant image kernel: Over 5 runs, average image time = 1.9468 average variance time = 196.627
+	Program:
+    	kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    	kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+
+    	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+
+	Schedule:
+		kernel.compute_root();
+    	kernel1.compute_root();
+
+
+    	blur_image.split(y, y0, yi, 10);
+    	blur_variance.split(y, y0, yi, 10);
+
+    	blur_image.parallel(y0);
+    	blur_variance.parallel(y0);
+
+    	blur_image.vectorize(x, 8);
+    	blur_variance.vectorize(x, 8);
+
+NOTE: Schedules 5-10 were computed using a fixed kernel:
+	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+Schedules 11-17 use corresponding schedules, but with spatially varying kernels.
+Schedules 14 and 15 both correspond with 8, but have different tile sizes.
+
+
+11. Kernel compute_at (5, with spatially varying kernel): average image time = 8.748 average variance time = 112.814
+    //Program:
+        kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+        kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    
+        blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+        blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+    
+  
+    //Schedule:  
+        kernel.compute_at(blur_image, x).store_at(blur_image, y0);
+        kernel1.compute_at(blur_variance, x).store_at(blur_variance, y0);
+    
+        blur_variance.split(y, y0, yi, 10);
+        blur_variance.parallel(y0);
+        blur_variance.vectorize(x, 4);
+    
+        blur_image.split(y, y0, yi, 10);
+        blur_image.parallel(y0);
+        blur_image.vectorize(x, 4);
+
+
+12. Tile image (6):Over 5 runs, average image time = 115.996 average variance time = 101.955
+    //Program:
+        kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+        kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    
+        blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+        blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+    
+  
+    //Schedule:  
+    
+        blur_variance.split(y, y0, yi, 10);
+        blur_variance.parallel(y0);
+        blur_variance.vectorize(x, 4);
+    
+        blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .vectorize(x_inner, 4);
+
+
+13. Tile image, compute_root (7): Over 5 runs, average image time = 14.3296 average variance time = 247.463 
+    //Program:
+        kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+        kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    
+        blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+        blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+    
+  
+    //Schedule:  
+        kernel.compute_root();
+        kernel1.compute_root();
+    
+        blur_variance.split(y, y0, yi, 10);
+        blur_variance.parallel(y0);
+        blur_variance.vectorize(x, 4);
+    
+        blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .vectorize(x_inner, 4);
+
+14. Tile image, compute_at (8): average image time = 22.202 average variance time = 119.335
+    //Program:
+        kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+        kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    
+        blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+        blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+    
+  
+    //Schedule:      
+        kernel.compute_at(blur_image, x_inner).store_at(blur_image, tile_index);
+        kernel1.compute_at(blur_variance, x).store_at(blur_variance, y0);
+    
+        blur_variance.split(y, y0, yi, 10);
+        blur_variance.parallel(y0);
+        blur_variance.vectorize(x, 4);
+    
+        blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .vectorize(x_inner, 4);
+
+15. Tile image 20x20, compute_at (8): Over 5 runs, average image time = 11.806 average variance time = 163.27
+    //Program:
+        kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+        kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    
+        blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+        blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+    
+  
+    //Schedule:      
+        kernel.compute_at(blur_image, x_inner).store_at(blur_image, tile_index);
+        kernel1.compute_at(blur_variance, x).store_at(blur_variance, y0);
+    
+        blur_variance.split(y, y0, yi, 10);
+        blur_variance.parallel(y0);
+        blur_variance.vectorize(x, 4);
+    
+        blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 20, 20)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .vectorize(x_inner, 4);
+
+16. Tile image, kernel compute_root, unroll (9): average image time = 7.6836 average variance time = 232.699
+    //Program:
+        kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+        kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    
+        blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+        blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+    
+  
+    //Schedule:  
+        kernel.compute_root();
+        kernel1.compute_root();
+        
+        blur_variance.split(y, y0, yi, 10);
+        blur_variance.parallel(y0);
+        blur_variance.vectorize(x, 4);
+
+        blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .fuse(x_inner, y_inner, fused)
+            .vectorize(fused, 4)
+            .unroll(fused, 25);
+
+
+
+17. Tile image, unroll (10): Over 5 runs, average image time = 30.431 average variance time = 64.5888
+    //Program:
+        kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+        kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+                            cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    
+        blur_image(x, y) = image_bounded(x, y) * kernel(x/10, y/10);
+        blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+    
+  
+    //Schedule:  
+    
+        blur_variance.split(y, y0, yi, 10);
+        blur_variance.parallel(y0);
+        blur_variance.vectorize(x, 4);
+    
+        blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+            .fuse(x_outer, y_outer, tile_index)
+            .parallel(tile_index)
+            .fuse(x_inner, y_inner, fused)
+            .vectorize(fused, 4)
+            .unroll(fused, 25);
+
+
+NOTE: Schedules 5-10 were computed using a fixed kernel:
+	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+Schedules 11-17 use corresponding schedules, but with spatially varying kernels.
+Schedules 14 and 15 both correspond with 8, but have different tile sizes.
+
+5. Kernel compute_at(x): Over 5 runs, average image time = 2.0496 average variance time = 112.825
+    Program:
+		kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    	kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+
+    	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+	Schedule:
+    	kernel.compute_at(blur_image, x).store_at(blur_image, y0);
+    	kernel1.compute_at(blur_variance, x).store_at(blur_variance, y0);
+
+    	blur_image.split(y, y0, yi, 10);
+    	blur_variance.split(y, y0, yi, 10);
+
+    	blur_image.parallel(y0);
+    	blur_variance.parallel(y0);
+
+    	blur_image.vectorize(x, 8);
+    	blur_variance.vectorize(x, 8);
+
+6. Tile image: image time = 9.2874 average variance time = 54.4128
+	Program:
+    	kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    	kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+
+    	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+
+	Schedule:
+    	blur_variance.split(y, y0, yi, 10);
+    	blur_variance.parallel(y0);
+    	blur_variance.vectorize(x, 8);
+
+
+    	blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+    	    .fuse(x_outer, y_outer, tile_index)
+    	    .parallel(tile_index)
+    	    .vectorize(x, 8);    
+
+
+
+7. Tile image, kernel compute_root(): Over 5 runs, average image time = 6.9792 average variance time = 238.666
+	Program:
+    	kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    	kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+
+    	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+
+	Schedule:
+		kernel.compute_root();
+    	kernel1.compute_root();
+
+    	blur_variance.split(y, y0, yi, 10);
+    	blur_variance.parallel(y0);
+    	blur_variance.vectorize(x, 8);
+
+
+    	blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+    	    .fuse(x_outer, y_outer, tile_index)
+    	    .parallel(tile_index)
+    	    .vectorize(x_inner, 8);
+
+
+8. Tile image, kernel compute_at(): Over 5 runs, average image time = 8.611 average variance time = 109.158
+	Program:
+    	kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    	kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+
+    	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+
+	Schedule:
+    	kernel.compute_at(blur_image, x_inner).store_at(blur_image, tile_index);
+    	kernel1.compute_at(blur_variance, x).store_at(blur_variance, y0);
+
+    	blur_variance.split(y, y0, yi, 10);
+    	blur_variance.parallel(y0);
+    	blur_variance.vectorize(x, 8);
+
+
+    	blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+    	    .fuse(x_outer, y_outer, tile_index)
+    	    .parallel(tile_index)
+    	    .vectorize(x_inner, 8);
+
+
+9. Tile image, kernel compute_root, unroll: average image time = 4.7546 average variance time = 233.027 
+	Program:
+    	kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    	kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+
+    	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+
+	Schedule:
+		kernel.compute_root();
+    	kernel1.compute_root();
+
+    	blur_variance.split(y, y0, yi, 10);
+    	blur_variance.parallel(y0);
+   		blur_variance.vectorize(x, 4);
+
+    	blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+    	    .fuse(x_outer, y_outer, tile_index)
+    	    .parallel(tile_index)
+    	    .fuse(x_inner, y_inner, fused)
+    	    .vectorize(fused, 4)
+    	    .unroll(fused, 25);
+
+10. Tile image, unroll: Over 5 runs, average image time = 5.6306 average variance time = 74.4742
+	Program:
+    	kernel(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+    	kernel1(x, y) = sin(x)*exp(x*x*x/(y*y+10.0f)/10.0f)/(x*x+10.0f) +
+    	                    cos(x)*exp(x*x*x*x/(y*y*y*y+10.0f)/10.0f)/(x+10.0f);
+
+    	blur_image(x, y) = image_bounded(x, y) * kernel(0, 0);
+		blur_variance(x, y) = image_bounded(x, y) * kernel1(x, y);
+
+	Schedule:
+    	blur_variance.split(y, y0, yi, 10);
+    	blur_variance.parallel(y0);
+   		blur_variance.vectorize(x, 4);
+
+    	blur_image.tile(x, y, x_outer, y_outer, x_inner, y_inner, 10, 10)
+    	    .fuse(x_outer, y_outer, tile_index)
+    	    .parallel(tile_index)
+    	    .fuse(x_inner, y_inner, fused)
+    	    .vectorize(fused, 4)
+    	    .unroll(fused, 25);
+
