@@ -3,7 +3,11 @@
 //
 // DYLD_LIBRARY_PATH=./bin:DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/ ./simple
 
+#ifndef STANDALONE
 #include "lsst/afw/image.h"
+namespace afwImage = lsst::afw::image;
+namespace afwMath  = lsst::afw::math;
+#endif
 #include <stdio.h>
 
 #include "Halide.h"
@@ -14,28 +18,35 @@ using namespace Halide;
 
 using Halide::Image;
 
-namespace afwImage = lsst::afw::image;
-namespace afwMath  = lsst::afw::math;
-
 int main(int argc, char **argv) {
-	auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
-    printf("Loaded: %d x %d\n", im.getWidth(), im.getHeight());
 
-    //store image data in img_var(x, y)
-    Image<float> image(im.getWidth(), im.getHeight());
-    Image<float> variance(im.getWidth(), im.getHeight());
-    Image<uint16_t> mask(im.getWidth(), im.getHeight());
+    //This image has 3 planes (image, mask, variance) and dimensions 2048 x 1489
+#ifndef STANDALONE
+    auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
+    int width = im.getWidth(), height = im.getHeight();
+#else
+    int width = 2048, height = 1489;
+    printf("[no load]");
+#endif
+    printf("Loaded: %d x %d\n", width, height);
 
+    //store image data in img_var(x, y, 0) and variance data in img_var(x, y, 1)
+    Image<float> image(width, height);
+    Image<float> variance(width, height);
+    Image<uint16_t> mask(width, height);
+
+#ifndef STANDALONE
     //Read image in
-    for (int y = 0; y < im.getHeight(); y++) {
-    	afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = im.x_at(0, y);
-	   	for (int x = 0; x < im.getWidth(); x++){
-       		image(x, y) = (*inPtr).image();
-      		variance(x, y) = (*inPtr).variance();
-     		mask(x, y) = (*inPtr).mask();
-     		inPtr++;
+    for (int y = 0; y < height; y++) {
+        afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = im.x_at(0, y);
+        for (int x = 0; x < width; x++){
+            image(x, y) = (*inPtr).image();
+            variance(x, y) = (*inPtr).variance();
+            mask(x, y) = (*inPtr).mask();
+            inPtr++;
         }
     }
+#endif
 	
 	int boundingBox = 2;
     
@@ -182,6 +193,7 @@ int main(int argc, char **argv) {
 
 //    blur_mask.realize(mask_output);
 
+#ifndef STANDALONE
     //write image out
     auto imOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
     for (int y = 0; y < imOut.getHeight(); y++) {
@@ -197,7 +209,7 @@ int main(int argc, char **argv) {
     }
 
 	imOut.writeFits("./images/halideSimple.fits");
-
+#endif
 
     double average = 0;
     double min;
