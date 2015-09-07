@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
     //calculate the spatially dependent normalization
     Func norm ("norm");
     Expr norm_help = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
+/*    for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
             norm_help += (exp(-((i*cos(polynomial(x, y)) +j*sin(polynomial(x, y)))
                     *(i*cos(polynomial(x, y)) +j*sin(polynomial(x, y))))
@@ -141,6 +141,12 @@ int main(int argc, char *argv[]) {
                     *(exp(-((j*cos(polynomial(x, y)) - i*sin(polynomial(x, y)))
                     *(j*cos(polynomial(x, y)) - i*sin(polynomial(x, y))))
                     /(2*polynomial(x, y)*polynomial(x, y))) / (sqrtf(2*M_PI)*polynomial(x, y)));
+        }
+    }
+*/
+    for(int i = -boundingBox; i <= boundingBox; i++){
+        for(int j = -boundingBox; j <= boundingBox; j++){
+            norm_help += kernel(x, y, i, j);
         }
     }
     norm(x, y) = norm_help;
@@ -203,6 +209,8 @@ int main(int argc, char *argv[]) {
 //    kernel1.split(y, y0, yi, 4);
 //    kernel1.parallel(y0);
 
+//    kernel.compute_root();
+//    kernel1.compute_root();
 
     //best schedule found:
     // Split the y coordinate of the consumer into strips:
@@ -344,7 +352,7 @@ int main(int argc, char *argv[]) {
     double imgTime;
     double varTime;
     double maskTime;
-    int numberOfRuns = 5;
+    int numberOfRuns = 1;
     for (int i = 0; i < numberOfRuns; i++) {
         double t1 = current_time();
         blurImage.realize(image_output);
