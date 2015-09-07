@@ -180,20 +180,31 @@ int main(int argc, char **argv) {
 	blur_variance_help = blur_variance_help/(norm*norm);
 	blur(x, y, 1) = blur_variance_help;
 
-	blur.reorder(c, x, y);
+
+//	totalKernel.compute_at(blur, y);
+	totalKernel.compute_root();
+//	blur.reorder(c, x, y);
     // Split the y coordinate of the consumer into strips of 16 scanlines:
-    blur.split(y, y0, yi, 30);
+    blur.split(y, y0, yi, 4);
+    blur.update(0).split(y, y0, yi, 1);
+    blur.update(1).split(y, y0, yi, 1);
     // Compute the strips using a thread pool and a task queue.
     blur.parallel(y0);
+    blur.update(0).parallel(y0);
+    blur.update(1).parallel(y0);
+
     // Vectorize across x by a factor of four.
     blur.vectorize(x, 8);
+    blur.update(0).vectorize(x, 8);
+    blur.update(1).vectorize(x, 8);
 
 //	for(int i = 0; i < boundingBox*boundingBox; i++)
 //		blur.update(i).vectorize(x, 8);
 
 
     // Print out pseudocode for the pipeline.
-    blur.compile_to_lowered_stmt("blur.html", {img_var}, HTML);
+    blur.compile_to_lowered_stmt("spatiallyInvariant.html", {img_var}, HTML);
+    blur.print_loop_nest();
 
 
     //Compute mask

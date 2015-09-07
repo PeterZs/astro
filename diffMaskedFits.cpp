@@ -20,7 +20,7 @@
 //
 // DYLD_LIBRARY_PATH=./bin:DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/ ./diffMaskedFits
 
-
+//for the purpose of creating output image of (image diff)/trueVariance, enter reference image as first argument (its variance will be used)
 
 #include "lsst/afw/image.h"
 #include <stdio.h>
@@ -85,12 +85,14 @@ int main(int argc, char *argv[]) {
     double maxImageDiff = 0;
     double maxImageDiffPercent = 0;
     double valueAtMaxImageDiff = 0;
+    double varianceAtMaxImgDiff = 0;
     int imageX = -1;
     int imageY = -1;
 
     double maxVarianceDiff = 0;
     double maxVarianceDiffPercent = 0;
-    double valueAtMaxVarianceDiff = 0;
+    double valueAtMaxVarianceDiff1 = 0;
+    double valueAtMaxVarianceDiff2 = 0;
     int varianceX = -1;
     int varianceY = -1;
 
@@ -108,25 +110,31 @@ int main(int argc, char *argv[]) {
     float maxVariance2 = 0;
     int maxMask2 = 0;
 
+
+    int kernelSize = 20;
     auto imDiff = afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>(im1.getWidth(), im1.getHeight());
-    for (int y = 5; y < imDiff.getHeight()-5; y++) {
+    for (int y = kernelSize; y < imDiff.getHeight()-kernelSize; y++) {
     	afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>::x_iterator inPtr = imDiff.x_at(0, y);
 
-        for (int x = 5; x < imDiff.getWidth()-5; x++){
-        	afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel(image1(x, y) - image2(x, y), variance1(x, y) - variance2(x, y), mask1(x, y) - mask2(x, y));
+        for (int x = kernelSize; x < imDiff.getWidth()-kernelSize; x++){
+//            afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel(image1(x, y) - image2(x, y), variance1(x, y) - variance2(x, y), mask1(x, y) - mask2(x, y));
+            afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel((image1(x, y) - image2(x, y))/variance1(x, y), variance1(x, y) - variance2(x, y), mask1(x, y) - mask2(x, y));
         	(*inPtr) = curPixel;
         	inPtr++;
-            if(abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxImageDiffPercent){
+//            if(abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y))) > maxImageDiffPercent){
+            if(abs(image1(x, y) - image2(x, y)) > maxImageDiff){
                 maxImageDiffPercent = abs(image1(x, y) - image2(x, y))/min(abs(image1(x, y)), abs(image2(x, y)));
                 maxImageDiff = abs(image1(x, y) - image2(x, y));
                 valueAtMaxImageDiff = min(abs(image1(x, y)), abs(image2(x, y)));
+                varianceAtMaxImgDiff = min(abs(variance1(x, y)), abs(variance2(x, y)));
                 imageX = x;
                 imageY = y;
             }
             if(abs(variance1(x, y) - variance2(x, y))/min(abs(variance1(x, y)), abs(variance2(x, y))) > maxVarianceDiff){
                 maxVarianceDiffPercent = abs(variance1(x, y) - variance2(x, y))/min(abs(variance1(x, y)), abs(variance2(x, y)));
                 maxVarianceDiff = abs(variance1(x, y) - variance2(x, y));
-                valueAtMaxVarianceDiff = min(abs(variance1(x, y)), abs(variance2(x, y)));
+                valueAtMaxVarianceDiff1 = variance1(x, y);
+                valueAtMaxVarianceDiff2 = variance2(x, y);
                 varianceX = x;
                 varianceY = y;
             }
@@ -156,10 +164,11 @@ int main(int argc, char *argv[]) {
 
     cout << "Max (image difference)/(min img value) = " << maxImageDiffPercent << ",  Max image difference = " << maxImageDiff
     << ", value at max image difference = " << valueAtMaxImageDiff << " at position: (" << imageX << ", " << imageY
-    << ")" <<endl;
+    << "), " << "variance at max difference = " << varianceAtMaxImgDiff << endl;
 
     cout << "Max (variance difference)/(min var value) = " << maxVarianceDiffPercent << ",  Max Variance difference = " << maxVarianceDiff
-    << ", value at max Variance difference = " << valueAtMaxVarianceDiff << " at position: (" << varianceX << ", ";
+    << ", variance1 at max Variance difference = " << valueAtMaxVarianceDiff1 << ", variance2 at max Variance difference = "
+    << valueAtMaxVarianceDiff2 <<" at position: (" << varianceX << ", ";
     cout << varianceY << ")" << endl;
 
     cout << "Max mask difference = " << maxMaskDiff << " at position: (" << maskX << ", " << maskY << ")" << 
@@ -171,6 +180,6 @@ int main(int argc, char *argv[]) {
     cout << "Max image2 = " << maxImage2 << ", max variance2 = " << maxVariance2 << 
     ", max mask2 = " << maxMask2 << endl;
 
-	imDiff.writeFits("./imageDifference.fits");
+	imDiff.writeFits("./imageDifferenceDivVariance.fits");
 }
 

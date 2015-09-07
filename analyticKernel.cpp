@@ -1,28 +1,20 @@
 // On os x:
-//
-//g++ -I DarwinX86/pex_policy/10.1+1/include/ -I DarwinX86/daf_persistence/10.1+1/include/ -I DarwinX86/utils/10.1+1/include/ -I DarwinX86/daf_base/10.1+2/include/ -I DarwinX86/base/10.1+1/include/ -I DarwinX86/ndarray/10.1+2/include/ -I DarwinX86/pex_exceptions/10.1+1/include/ -I DarwinX86/eigen/3.2.0/include/ -I DarwinX86/afw/10.1+1/include -I ./include -L DarwinX86/afw/10.1+1/lib -L DarwinX86/daf_base/10.1+2/lib/ -L DarwinX86/daf_persistence/10.1+1/lib/ -L DarwinX86/boost/1.55.0.1.lsst2+3/lib/ -L ./bin test.cpp -lafw -ldaf_base -ldaf_persistence -lboost_system -lHalide `libpng-config --cflags --ldflags` -o test
-//
-//DYLD_LIBRARY_PATH=DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/:./bin ./test
-//
-// On linux, you can compile and run it like so:
-//g++ -I DarwinX86/pex_policy/10.1+1/include/ -I DarwinX86/daf_persistence/10.1+1/include/ -I DarwinX86/utils/10.1+1/include/ -I DarwinX86/daf_base/10.1+2/include/ -I DarwinX86/base/10.1+1/include/ -I DarwinX86/ndarray/10.1+2/include/ -I DarwinX86/pex_exceptions/10.1+1/include/ -I DarwinX86/eigen/3.2.0/include/ -I DarwinX86/afw/10.1+1/include -I ./include -L DarwinX86/afw/10.1+1/lib -L DarwinX86/daf_base/10.1+2/lib/ -L DarwinX86/daf_persistence/10.1+1/lib/ -L DarwinX86/boost/1.55.0.1.lsst2+3/lib/ -L ./bin test.cpp -lafw -ldaf_base -ldaf_persistence -lboost_system -lHalide `libpng-config --cflags --ldflags` -lpthread -ldl -o test
-//
-//LD_LIBRARY_PATH=DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/:./bin ./test
-//
-// On os x:
-// g++ test.cpp -g -I ./include -L ./bin -lHalide `libpng-config --cflags --ldflags` -o test -std=c++11
-// DYLD_LIBRARY_PATH=../bin ./test
-
-
-
-// On os x:
 // g++ analyticKernel.cpp -g -I ./include -I DarwinX86/pex_policy/10.1+1/include/ -I DarwinX86/daf_persistence/10.1+1/include/ -I DarwinX86/utils/10.1+1/include/ -I DarwinX86/daf_base/10.1+2/include/ -I DarwinX86/base/10.1+1/include/ -I DarwinX86/ndarray/10.1+2/include/ -I DarwinX86/pex_exceptions/10.1+1/include/ -I DarwinX86/eigen/3.2.0/include/ -I DarwinX86/afw/10.1+1/include -L ./bin -L DarwinX86/afw/10.1+1/lib -L DarwinX86/daf_base/10.1+2/lib/ -L DarwinX86/daf_persistence/10.1+1/lib/ -L DarwinX86/boost/1.55.0.1.lsst2+3/lib/ -lHalide -lafw -ldaf_base -ldaf_persistence -lboost_system `libpng-config --cflags --ldflags` -o analyticKernel -std=c++11
 //
 // DYLD_LIBRARY_PATH=./bin:DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/ ./analyticKernel
+//
+// On linux:
+// g++ analyticKernel.cpp -g -I ./include -I Linux64/pex_policy/10.1+1/include/ -I Linux64/daf_persistence/10.1+1/include/ -I Linux64/utils/10.1+1/include/ -I Linux64/daf_base/10.1+2/include/ -I Linux64/base/10.1+1/include/ -I Linux64/ndarray/10.1+2/include/ -I Linux64/pex_exceptions/10.1+1/include/ -I Linux64/eigen/3.2.0/include/ -I Linux64/afw/10.1+1/include -L ./bin -L Linux64/afw/10.1+1/lib -L Linux64/daf_base/10.1+2/lib/ -L Linux64/daf_persistence/10.1+1/lib/ -L Linux64/boost/1.55.0.1.lsst2+3/lib/ -L Linux64/wcslib/4.14+7/lib/ -lHalide -lafw -ldaf_base -ldaf_persistence -lboost_system `libpng-config --cflags --ldflags` -lpthread -ldl -o analyticKernel -std=c++11
+//
+//LD_LIBRARY_PATH=./bin:Linux64/afw/10.1+1/lib/:Linux64/daf_persistence/10.1+1/lib/:Linux64/daf_base/10.1+2/lib/:Linux64/boost/1.55.0.1.lsst2+3/lib/:Linux64/xpa/2.1.15.lsst2/lib/:Linux64/pex_policy/10.1+1/lib/:Linux64/pex_logging/10.1+1/lib/:Linux64/utils/10.1+1/lib/:Linux64/pex_exceptions/10.1+1/lib/:Linux64/base/10.1+1/lib/:Linux64/wcslib/4.14+7/lib/:Linux64/cfitsio/3360.lsst1/lib/:Linux64/gsl/1.16.lsst1/lib/:Linux64/minuit2/5.28.00/lib:Linux64/mysql/5.1.65.lsst2/lib/ ./analyticKernel
 
 
-
+#ifndef STANDALONE
 #include "lsst/afw/image.h"
+namespace afwImage = lsst::afw::image;
+namespace afwMath  = lsst::afw::math;
+#endif
+
 #include <stdio.h>
 
 #include "Halide.h"
@@ -33,8 +25,6 @@ using namespace Halide;
 
 using Halide::Image;
 
-namespace afwImage = lsst::afw::image;
-namespace afwMath  = lsst::afw::math;
 
 inline float cPolynomial(float x, float y){
     return (0.1f + 0.0f*x + 0.0019476158495634653f*y + 0.000001f*x*x + 0.000001f*x*y
@@ -62,39 +52,68 @@ inline float cKernel(float x, float y, float i, float j, float maxX, float maxY)
 */
 
 int main(int argc, char *argv[]) {
-	auto im = afwImage::MaskedImage<float>("../calexp-004207-g3-0123.fits");
-    printf("Loaded: %d x %d\n", im.getWidth(), im.getHeight());
+
+    /*TEST
+    float test = 0.0f;
+
+    unsigned char *testHelp = reinterpret_cast<unsigned char *>(&test);
+
+    *(testHelp+3) = *(testHelp+3)+33;
+
+    cout << "0.0f = " << (*testHelp) << ".." << *(testHelp+1) << ".." << *(testHelp+2) << ".." << *(testHelp+3) << endl;
+    cout << "Now float = " << test << endl;
+    ENDTEST*/
+
+
+
+
+#ifndef STANDALONE
+    auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
+    int width = im.getWidth(), height = im.getHeight();
+#else
+    int width = 2048, height = 1489;
+    printf("[no load]");
+#endif
+    printf("Loaded: %d x %d\n", width, height);
 
     //store image data in img_var(x, y, 0) and variance data in img_var(x, y, 1)
-    Image<float> image(im.getWidth(), im.getHeight());
-    Image<float> variance(im.getWidth(), im.getHeight());
-    Image<uint16_t> mask(im.getWidth(), im.getHeight());
+    Image<float> image(width, height);
+    Image<float> variance(width, height);
+    Image<uint16_t> mask(width, height);
 
+#ifndef STANDALONE
     //Read image in
-    for (int y = 0; y < im.getHeight(); y++) {
-    	afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = im.x_at(0, y);
-	   	for (int x = 0; x < im.getWidth(); x++){
-       		image(x, y) = (*inPtr).image();
-      		variance(x, y) = (*inPtr).variance();
-     		mask(x, y) = (*inPtr).mask();
-     		inPtr++;
+    for (int y = 0; y < height; y++) {
+        afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = im.x_at(0, y);
+        for (int x = 0; x < width; x++){
+            image(x, y) = (*inPtr).image();
+            variance(x, y) = (*inPtr).variance();
+            mask(x, y) = (*inPtr).mask();
+            inPtr++;
         }
     }
+#endif
 
 
-    int boundingBox = 2; 
+    int boundingBox = 9; 
     Var x, y, i, j, i_v, y0, yi;
 
     //compute output image and variance
-    Func polynomial;
+    Func polynomial ("polynomial");
     polynomial(x, y) = 0.1f + 0.0f*x + 0.0019476158495634653f*y + 0.000001f*x*x + 0.000001f*x*y
+                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
+                     + 0.000000001f*y*y*y;
+
+    //for experimenting with optimizations
+    Func polynomial1 ("polynomial1");
+    polynomial1(x, y) = 0.1f + 0.0f*x + 0.0019476158495634653f*y + 0.000001f*x*x + 0.000001f*x*y
                      + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
                      + 0.000000001f*y*y*y;
 
     //The kernel is spatially variant for different positions (x, y) in the image
     //kernel(x, y, i, j) is the value of the kernel at position (x, y) in the image
     //and position (i, j) inside the kernel
-    Func kernel;
+    Func kernel ("kernel");
     kernel(x, y, i, j) = (exp(-((i*cos(polynomial(x, y)) +j*sin(polynomial(x, y)))
                     *(i*cos(polynomial(x, y)) +j*sin(polynomial(x, y))))
                     /(2*polynomial(x, y)*polynomial(x, y))) / (sqrtf(2*M_PI)*polynomial(x, y)))
@@ -102,8 +121,17 @@ int main(int argc, char *argv[]) {
                     *(j*cos(polynomial(x, y)) - i*sin(polynomial(x, y))))
                     /(2*polynomial(x, y)*polynomial(x, y))) / (sqrtf(2*M_PI)*polynomial(x, y)));
 
+    //for experimenting with optimizations
+    Func kernel1 ("kernel1");
+    kernel1(x, y, i, j) = (exp(-((i*cos(polynomial1(x, y)) +j*sin(polynomial1(x, y)))
+                    *(i*cos(polynomial1(x, y)) +j*sin(polynomial1(x, y))))
+                    /(2*polynomial1(x, y)*polynomial1(x, y))) / (sqrtf(2*M_PI)*polynomial1(x, y)))
+                    *(exp(-((j*cos(polynomial1(x, y)) - i*sin(polynomial1(x, y)))
+                    *(j*cos(polynomial1(x, y)) - i*sin(polynomial1(x, y))))
+                    /(2*polynomial1(x, y)*polynomial1(x, y))) / (sqrtf(2*M_PI)*polynomial1(x, y)));
+
     //calculate the spatially dependent normalization
-    Func norm;
+    Func norm ("norm");
     Expr norm_help = 0.0f;
     for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
@@ -117,49 +145,83 @@ int main(int argc, char *argv[]) {
     }
     norm(x, y) = norm_help;
 
-    Func image_bounded = BoundaryConditions::repeat_edge(image);
-    Func variance_bounded = BoundaryConditions::repeat_edge(variance);
+    Func image_bounded ("image_bounded");
+    image_bounded = BoundaryConditions::repeat_edge(image);
+    Func variance_bounded ("variance_bounded");
+    variance_bounded = BoundaryConditions::repeat_edge(variance);
 
-    Func blurImage;
+    Func blurImage ("blurImage");
     //compute Image output
     Expr blur_image_help = 0.0f;
+    Expr norm1 = 0.0f;
     for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help += image_bounded(x + i, y + j) * kernel(x, y, i, j); 
+            blur_image_help += image_bounded(x + i, y + j) * kernel1(x, y, i, j); 
+            norm1 += kernel1(x, y, i, j);
+            //test
+//            blur_image_help += image_bounded(x + i, y + j) * kernel1(5, 5, i, j); 
+//            norm1 += kernel1(5, 5, i, j);
+            //not real functionality, testing speed up
+//            blur_image_help += select(x%2 == 0, image_bounded(x + i, y + j) * kernel1(x, y, i, j), 
+//                image_bounded(x + i, y + j) * kernel1(x - 1, y, i, j)); 
+//            norm1 += select(x%2 == 0, kernel1(x, y, i, j), kernel1(x-1 , y, i, j));
+//            blur_image_help += select(x%2 == 0, image_bounded(x + i, y + j) * kernel1(x, y, i, j), 
+//                image_bounded(x + i, y + j) * kernel1(x, y, i, j)); 
+//            norm1 += select(x%2 == 0, kernel1(x, y, i, j), kernel1(x, y, i, j));
         }
     }
-    blur_image_help = blur_image_help/norm(x, y);
+//    blur_image_help = blur_image_help/norm(x, y);
+    blur_image_help = blur_image_help/norm1;
+
     blurImage(x, y) = blur_image_help;
 
 
     //compute Variance output
-    Func blurVariance;
+    Func blurVariance ("blurVariance");
     Expr blur_variance_help = 0.0f;
+    Expr norm2 = 0.0f;
     for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
             blur_variance_help += variance_bounded(x + i, y + j) * kernel(x, y, i, j) * kernel(x, y, i, j); 
+            norm2 += kernel(x, y, i, j);
+
+            //test
+//            blur_variance_help += variance_bounded(x + i, y + j) * kernel(5, 5, i, j) * kernel(5, 5, i, j); 
+//            norm2 += kernel(5, 5, i, j);
         }
     }
-    blur_variance_help = blur_variance_help/(norm(x,y)*norm(x,y));
+//    blur_variance_help = blur_variance_help/(norm(x,y)*norm(x,y));
+    blur_variance_help = blur_variance_help/(norm2*norm2);
     blurVariance(x, y) = blur_variance_help;
 
     //Schedule
   //  blur.reorder(i_v, x, y);
+
+
+//    kernel1.compute_at(blurImage, x);
+//    kernel1.vectorize(x, 8);
+//    kernel1.split(y, y0, yi, 4);
+//    kernel1.parallel(y0);
+
+
+    //best schedule found:
     // Split the y coordinate of the consumer into strips:
     blurImage.split(y, y0, yi, 4);
     blurVariance.split(y, y0, yi, 4);
     // Compute the strips using a thread pool and a task queue.
     blurImage.parallel(y0);
     blurVariance.parallel(y0);
-    // Vectorize across x by a factor of four.
+    // Vectorize across x.
     blurImage.vectorize(x, 8);
     blurVariance.vectorize(x, 8);
 
-//    polynomial.compute_at(blur, x).vectorize(x, 8);
+//    polynomial1.compute_at(blurImage, x).vectorize(x, 8);
+//    kernel1.compute_at(blurImage, x).vectorize(x, 8);
 
 
     // Print out pseudocode for the pipeline.
-//    blurImage.compile_to_lowered_stmt("blur.html", {image}, HTML);
+    blurImage.compile_to_lowered_stmt("analyticKernelBlurImage.html", {image}, HTML);
+//    blurImage.compile_to_c("analyticKernel_C_Code.cpp", std::vector<Argument>(), "analyticKernel_C_Code");
 //    blurVariance.compile_to_lowered_stmt("blur.html", {variance}, HTML);
 
 
@@ -223,16 +285,21 @@ int main(int argc, char *argv[]) {
 */
 
     //Compute mask
-    Func mask_bounded = BoundaryConditions::repeat_edge(mask);
+    Func mask_bounded ("mask_bounded");
+    mask_bounded = BoundaryConditions::repeat_edge(mask);
 
-    Func maskOut;
+    Func maskOut ("maskOut");
 
     Expr maskOutHelp = 0;
 
     for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
-//            maskOutHelp = select(kernel(x, y, i, j) == 0.0f, maskOutHelp, maskOutHelp | mask_bounded(x + i, y + j));
-            maskOutHelp = maskOutHelp | mask_bounded(x + i, y + j);
+            maskOutHelp = select(kernel(x, y, i, j) == 0.0f, maskOutHelp, maskOutHelp | mask_bounded(x + i, y + j));
+//            maskOutHelp = maskOutHelp | mask_bounded(x + i, y + j);
+
+
+            //test
+//            maskOutHelp = select(kernel(5, 5, i, j) == 0.0f, maskOutHelp, maskOutHelp | mask_bounded(x + i, y + j));
 
 /*                if((x1 < 10) && (y1 < 10)){
                     cout << "(x, y) = (" << x1 << ", " << y1 << ")";
@@ -256,7 +323,11 @@ int main(int argc, char *argv[]) {
     // Vectorize across x by a factor of four.
     maskOut.vectorize(x, 8);
 
-    
+//    kernel1.trace_stores();
+//    blurImage.trace_stores();
+    blurImage.print_loop_nest();
+
+
     // Benchmark the pipeline.
     Image<float> image_output(image.width(), image.height());
     blurImage.realize(image_output);
@@ -310,7 +381,7 @@ int main(int argc, char *argv[]) {
     "maskTime = " << maskTime << endl;
 
 //    blur_mask.realize(mask_output);
-
+#ifndef STANDALONE
     //write image out
     auto imOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
     for (int y = 0; y < imOut.getHeight(); y++) {
@@ -326,5 +397,6 @@ int main(int argc, char *argv[]) {
     }
 
 	imOut.writeFits("./halideAnalyticKernel.fits");
+#endif
 }
 
