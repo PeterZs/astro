@@ -26,10 +26,569 @@ using namespace Halide;
 
 using Halide::Image;
 
+#define BOUNDING_BOX 5 //the kernel has dimensions (BOUNDING_BOX*2 + 1) x (BOUNDING_BOX*2 + 1)
+#define NUMBER_OF_RUNS 5 //number of runs when performance testing
+// Define some Vars to use.
+Var x, y, i, j, i_v, y_0, yi;
 
+// from lesson_12_using_the_gpu.cpp
+// We're going to want to schedule a pipeline in several ways, so we
+// define the pipeline in a class so that we can recreate it several
+// times with different schedules.
+class convolveKernelsSeparatelyThenCombinePipeline {
+public:
+    Func polynomial1, polynomial2, polynomial3, polynomial4, polynomial5, kernel1, kernel2,
+    kernel3, kernel4, kernel5, image_bounded, blurImage1, blurImage2, blurImage3,
+    blurImage4, blurImage5, variance_bounded, mask_bounded, combined_output;
+
+    Image<float> image;
+    Image<float> variance;
+    Image<uint16_t> mask;
+
+    Image<float> image_output;
+    Image<float> variance_output;
+    Image<uint16_t> mask_output;
+
+    convolveKernelsSeparatelyThenCombinePipeline(Image<float> image_, Image<float> variance_,
+        Image<uint16_t> mask_): image(image_), variance(variance_), mask(mask_) {
+
+        //Polynomials that define weights of spatially variant linear combination of 5 kernels
+        polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.4f*x*x + 0.5f*x*y
+                         + 0.6f*y*y +  0.0007f*x*x*x + 0.0008f*x*x*y + 0.0009f*x*y*y
+                         + 0.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+        polynomial2(x, y) = 1.1f + 1.002f*x + 1.003f*y + 1.4f*x*x + 1.5f*x*y
+                         + 1.6f*y*y +  1.0007f*x*x*x + 1.0008f*x*x*y + 1.0009f*x*y*y
+                         + 1.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+    
+        polynomial3(x, y) = 2.1f + 2.002f*x + 2.003f*y + 2.4f*x*x + 2.5f*x*y
+                         + 2.6f*y*y +  2.0007f*x*x*x + 2.0008f*x*x*y + 2.0009f*x*y*y
+                         + 2.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+        polynomial4(x, y) = 3.1f + 3.002f*x + 3.003f*y + 3.4f*x*x + 3.5f*x*y
+                         + 3.6f*y*y +  3.0007f*x*x*x + 3.0008f*x*x*y + 3.0009f*x*y*y
+                         + 3.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+        polynomial5(x, y) = 4.1f + 4.002f*x + 4.003f*y + 4.4f*x*x + 4.5f*x*y
+                         + 4.6f*y*y +  4.0007f*x*x*x + 4.0008f*x*x*y + 4.0009f*x*y*y
+                         + 4.00011f*y*y*y;
+    
+        //5 Kernels that will be weighted by their corresponding polynomials to produce
+        //the total kernel
+        //Kernel #1
+        float sigmaX1 = 2.0f;
+        float sigmaY1 = 2.0f;
+        float theta1 = 0.0f; //rotation of sigmaX axis
+        kernel1(i, j) = (exp(-((i*cos(theta1) +j*sin(theta1))*(i*cos(theta1) +j*sin(theta1)))
+                        /(2*sigmaX1*sigmaX1)) / (sqrtf(2*M_PI)*sigmaX1))
+                        *(exp(-((j*cos(theta1) - i*sin(theta1))*(j*cos(theta1) - i*sin(theta1)))
+                        /(2*sigmaY1*sigmaY1)) / (sqrtf(2*M_PI)*sigmaY1));
+    
+        
+        //Kernel #2
+        float sigmaX2 = 0.5f;
+        float sigmaY2 = 4.0f;
+        float theta2 = 0.0f; //rotation of sigmaX axis
+        kernel2(i, j) = (exp(-((i*cos(theta2) +j*sin(theta2))*(i*cos(theta2) +j*sin(theta2)))
+                        /(2*sigmaX2*sigmaX2)) / (sqrtf(2*M_PI)*sigmaX2))
+                        *(exp(-((j*cos(theta2) - i*sin(theta2))*(j*cos(theta2) - i*sin(theta2)))
+                        /(2*sigmaY2*sigmaY2)) / (sqrtf(2*M_PI)*sigmaY2));
+    
+        //Kernel #3
+        float sigmaX3 = 0.5f;
+        float sigmaY3 = 4.0f;
+        float theta3 = 3.14159f/4; //rotation of sigmaX axis
+        kernel3(i, j) = (exp(-((i*cos(theta3) +j*sin(theta3))*(i*cos(theta3) +j*sin(theta3)))
+                        /(2*sigmaX3*sigmaX3)) / (sqrtf(2*M_PI)*sigmaX3))
+                        *(exp(-((j*cos(theta3) - i*sin(theta3))*(j*cos(theta3) - i*sin(theta3)))
+                        /(2*sigmaY3*sigmaY3)) / (sqrtf(2*M_PI)*sigmaY3));
+        //Kernel #4
+        float sigmaX4 = 0.5f;
+        float sigmaY4 = 4.0f;
+        float theta4 = 3.14159f/2; //rotation of sigmaX axis
+        kernel4(i, j) = (exp(-((i*cos(theta4) +j*sin(theta4))*(i*cos(theta4) +j*sin(theta4)))
+                        /(2*sigmaX4*sigmaX4)) / (sqrtf(2*M_PI)*sigmaX4))
+                        *(exp(-((j*cos(theta4) - i*sin(theta4))*(j*cos(theta4) - i*sin(theta4)))
+                        /(2*sigmaY4*sigmaY4)) / (sqrtf(2*M_PI)*sigmaY4));
+    
+    
+        //Kernel #5
+        float sigmaX5 = 4.0f;
+        float sigmaY5 = 4.0f;
+        float theta5 = 0.0; //rotation of sigmaX axis
+        kernel5(i, j) = (exp(-((i*cos(theta5) +j*sin(theta5))*(i*cos(theta5) +j*sin(theta5)))
+                        /(2*sigmaX5*sigmaX5)) / (sqrtf(2*M_PI)*sigmaX5))
+                        *(exp(-((j*cos(theta5) - i*sin(theta5))*(j*cos(theta5) - i*sin(theta5)))
+                        /(2*sigmaY5*sigmaY5)) / (sqrtf(2*M_PI)*sigmaY5));
+    
+    
+        //Compute output image plane
+        image_bounded = BoundaryConditions::repeat_edge(image);
+    
+        //Compute the convolution of each spatially invariant kernel with the image plane
+        Expr blur_image_help1 = 0.0f;
+        Expr norm1 = 0.0f;
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_image_help1 += image_bounded(x + i, y + j) * kernel1(i, j); 
+                norm1 += kernel1(i, j);
+            }
+        }
+        blur_image_help1 = blur_image_help1/norm1;
+        blurImage1(x, y) = blur_image_help1;
+    
+        Expr blur_image_help2 = 0.0f;
+        Expr norm2 = 0.0f;
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_image_help2 += image_bounded(x + i, y + j) * kernel2(i, j); 
+                norm2 += kernel2(i, j);
+            }
+        }
+        blur_image_help2 = blur_image_help2/norm2;
+        blurImage2(x, y) = blur_image_help2;
+    
+        Expr blur_image_help3 = 0.0f;
+        Expr norm3 = 0.0f;
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_image_help3 += image_bounded(x + i, y + j) * kernel3(i, j); 
+                norm3 += kernel3(i, j);
+            }
+        }
+        blur_image_help3 = blur_image_help3/norm3;
+        blurImage3(x, y) = blur_image_help3;
+    
+        Expr blur_image_help4 = 0.0f;
+        Expr norm4 = 0.0f;
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_image_help4 += image_bounded(x + i, y + j) * kernel4(i, j); 
+                norm4 += kernel4(i, j);
+            }
+        }
+        blur_image_help4 = blur_image_help4/norm4;
+        blurImage4(x, y) = blur_image_help4;
+    
+        Expr blur_image_help5 = 0.0f;
+        Expr norm5 = 0.0f;
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_image_help5 += image_bounded(x + i, y + j) * kernel5(i, j); 
+                norm5 += kernel5(i, j);
+            }
+        }
+        blur_image_help5 = blur_image_help5/norm5;
+        blurImage5(x, y) = blur_image_help5;
+        
+        //
+
+        //compute spatially variant linear combination of 5 convolved images
+        Expr blur_image_help = (blurImage1(x, y)*polynomial1(x, y) + blurImage2(x, y)*polynomial2(x, y)
+                         + blurImage3(x, y)*polynomial3(x, y) + blurImage4(x, y)*polynomial4(x, y) 
+                         + blurImage5(x, y)*polynomial5(x, y))/ (polynomial1(x, y) 
+                            + polynomial2(x, y) + polynomial3(x, y) + polynomial4(x, y)
+                            + polynomial5(x, y));
+
+        //for test speed
+//        Expr blur_image_help = (blurImage1(x, y) + blurImage2(x, y)
+//                         + blurImage3(x, y) + blurImage4(x, y) 
+//                         + blurImage5(x, y))/(polynomial1(x, y) 
+//                            + polynomial2(x, y) + polynomial3(x, y) + polynomial4(x, y)
+//                            + polynomial5(x, y));
+
+        //Write real variance, mask, if this looks promising
+        Expr fakeVar = variance_bounded(x, y) + 2;
+        Expr fakeMask = mask_bounded(x, y) + 2;
+    //    combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
+        combined_output(x, y) = Tuple(blur_image_help, fakeVar, fakeMask);
+    }
+
+    void debug(){
+
+        //Check out what is happening
+        combined_output.print_loop_nest();
+        // Print out pseudocode for the pipeline.
+        combined_output.compile_to_lowered_stmt("linearCombinationKernel1BlurImage.html", {image}, HTML);
+
+    }
+
+    void schedule_for_cpu() {
+        // Split the y coordinate of the consumer into strips of 4 scanlines:
+        combined_output.split(y, y_0, yi, 4);
+        // Compute the strips using a thread pool and a task queue.
+        combined_output.parallel(y_0);
+        // Vectorize across x by a factor of four.
+        combined_output.vectorize(x, 4);
+
+//      blurImage1.compute_root();
+//      blurImage2.compute_root();
+//      blurImage3.compute_root();
+//      blurImage4.compute_root();
+//      blurImage5.compute_root();
+    }
+
+    void test_performance() {
+        // Benchmark the pipeline.
+        image_output(image.width(), image.height());
+        variance_output(variance.width(), variance.height());
+        mask_output(mask.width(), mask.height());
+    
+        Realization r = combined_output.realize(image.width(), image.height());
+        image_output = r[0];
+        variance_output = r[1];
+        mask_output = r[2];
+    
+        double average = 0;
+        double min;
+        double max;
+        double imgTime;
+        double varTime;
+        double maskTime;
+        for (int i = 0; i < NUMBER_OF_RUNS; i++) {
+            double t1 = current_time();
+            r = combined_output.realize(image.width(), image.height());
+            double t2 = current_time();
+            double t3 = current_time();
+            double t4 = current_time();
+            double curTime = (t4-t1);
+            average += curTime;
+            if(i == 0){
+                min = curTime;
+                max = curTime;
+                imgTime = t2-t1;
+                varTime = t3-t2;
+                maskTime = t4-t3;
+            }
+            else{
+                if(curTime < min){
+                    min = curTime;
+                    imgTime = t2-t1;
+                    varTime = t3-t2;
+                    maskTime = t4-t3;
+                }
+                if(curTime > max)
+                    max = curTime;
+            }
+        }
+        average = average/NUMBER_OF_RUNS;
+        std::cout << "Average Time: " << average << ", Min = " <<
+        min << ", Max = " << max << ", with " << NUMBER_OF_RUNS <<
+        " runs" << '\n';
+        cout << "For fastest run total time = " << min << ", imgTime = " << imgTime << ", varTime = " << varTime << 
+        "maskTime = " << maskTime << endl;
+
+/*
+        // If we realize curved into a Halide::Image, that will
+        // unfairly penalize GPU performance by including a GPU->CPU
+        // copy in every run. Halide::Image objects always exist on
+        // the CPU.
+
+        // Halide::Buffer, however, represents a buffer that may
+        // exist on either CPU or GPU or both.
+        Buffer output(UInt(8), input.width(), input.height(), input.channels());
+
+        // Run the filter once to initialize any GPU runtime state.
+        curved.realize(output);
+
+        // Now take the best of 3 runs for timing.
+        double best_time;
+        for (int i = 0; i < 3; i++) {
+
+            double t1 = current_time();
+
+            // Run the filter 100 times.
+            for (int j = 0; j < 100; j++) {
+                curved.realize(output);
+            }
+
+            // Force any GPU code to finish by copying the buffer back to the CPU.
+            output.copy_to_host();
+
+            double t2 = current_time();
+
+            double elapsed = (t2 - t1)/100;
+            if (i == 0 || elapsed < best_time) {
+                best_time = elapsed;
+            }
+        }
+
+        printf("%1.4f milliseconds\n", best_time);
+*/    
+    }
+
+};
+
+
+class convolveOneSpatiallyVaryingKernelPipeline {
+public:
+    Func polynomial1, polynomial2, polynomial3, polynomial4, polynomial5, kernel1, kernel2,
+    kernel3, kernel4, kernel5, image_bounded, blurImage1, blurImage2, blurImage3,
+    blurImage4, blurImage5, variance_bounded, mask_bounded, combined_output;
+
+    Image<float> image;
+    Image<float> variance;
+    Image<uint16_t> mask;
+
+    Image<float> image_output;
+    Image<float> variance_output;
+    Image<uint16_t> mask_output;
+
+    convolveOneSpatiallyVaryingKernelPipeline(Image<float> image_, Image<float> variance_,
+        Image<uint16_t> mask_): image(image_), variance(variance_), mask(mask_) {
+
+        //Polynomials that define weights of spatially variant linear combination of 5 kernels
+        polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.4f*x*x + 0.5f*x*y
+                         + 0.6f*y*y +  0.0007f*x*x*x + 0.0008f*x*x*y + 0.0009f*x*y*y
+                         + 0.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+        polynomial2(x, y) = 1.1f + 1.002f*x + 1.003f*y + 1.4f*x*x + 1.5f*x*y
+                         + 1.6f*y*y +  1.0007f*x*x*x + 1.0008f*x*x*y + 1.0009f*x*y*y
+                         + 1.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+    
+        polynomial3(x, y) = 2.1f + 2.002f*x + 2.003f*y + 2.4f*x*x + 2.5f*x*y
+                         + 2.6f*y*y +  2.0007f*x*x*x + 2.0008f*x*x*y + 2.0009f*x*y*y
+                         + 2.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+        polynomial4(x, y) = 3.1f + 3.002f*x + 3.003f*y + 3.4f*x*x + 3.5f*x*y
+                         + 3.6f*y*y +  3.0007f*x*x*x + 3.0008f*x*x*y + 3.0009f*x*y*y
+                         + 3.00011f*y*y*y;
+    
+        //for experimenting with optimizations
+        polynomial5(x, y) = 4.1f + 4.002f*x + 4.003f*y + 4.4f*x*x + 4.5f*x*y
+                         + 4.6f*y*y +  4.0007f*x*x*x + 4.0008f*x*x*y + 4.0009f*x*y*y
+                         + 4.00011f*y*y*y;
+    
+        //5 Kernels that will be weighted by their corresponding polynomials to produce
+        //the total kernel
+        //Kernel #1
+        float sigmaX1 = 2.0f;
+        float sigmaY1 = 2.0f;
+        float theta1 = 0.0f; //rotation of sigmaX axis
+        kernel1(i, j) = (exp(-((i*cos(theta1) +j*sin(theta1))*(i*cos(theta1) +j*sin(theta1)))
+                        /(2*sigmaX1*sigmaX1)) / (sqrtf(2*M_PI)*sigmaX1))
+                        *(exp(-((j*cos(theta1) - i*sin(theta1))*(j*cos(theta1) - i*sin(theta1)))
+                        /(2*sigmaY1*sigmaY1)) / (sqrtf(2*M_PI)*sigmaY1));
+    
+        
+        //Kernel #2
+        float sigmaX2 = 0.5f;
+        float sigmaY2 = 4.0f;
+        float theta2 = 0.0f; //rotation of sigmaX axis
+        kernel2(i, j) = (exp(-((i*cos(theta2) +j*sin(theta2))*(i*cos(theta2) +j*sin(theta2)))
+                        /(2*sigmaX2*sigmaX2)) / (sqrtf(2*M_PI)*sigmaX2))
+                        *(exp(-((j*cos(theta2) - i*sin(theta2))*(j*cos(theta2) - i*sin(theta2)))
+                        /(2*sigmaY2*sigmaY2)) / (sqrtf(2*M_PI)*sigmaY2));
+    
+        //Kernel #3
+        float sigmaX3 = 0.5f;
+        float sigmaY3 = 4.0f;
+        float theta3 = 3.14159f/4; //rotation of sigmaX axis
+        kernel3(i, j) = (exp(-((i*cos(theta3) +j*sin(theta3))*(i*cos(theta3) +j*sin(theta3)))
+                        /(2*sigmaX3*sigmaX3)) / (sqrtf(2*M_PI)*sigmaX3))
+                        *(exp(-((j*cos(theta3) - i*sin(theta3))*(j*cos(theta3) - i*sin(theta3)))
+                        /(2*sigmaY3*sigmaY3)) / (sqrtf(2*M_PI)*sigmaY3));
+        //Kernel #4
+        float sigmaX4 = 0.5f;
+        float sigmaY4 = 4.0f;
+        float theta4 = 3.14159f/2; //rotation of sigmaX axis
+        kernel4(i, j) = (exp(-((i*cos(theta4) +j*sin(theta4))*(i*cos(theta4) +j*sin(theta4)))
+                        /(2*sigmaX4*sigmaX4)) / (sqrtf(2*M_PI)*sigmaX4))
+                        *(exp(-((j*cos(theta4) - i*sin(theta4))*(j*cos(theta4) - i*sin(theta4)))
+                        /(2*sigmaY4*sigmaY4)) / (sqrtf(2*M_PI)*sigmaY4));
+    
+    
+        //Kernel #5
+        float sigmaX5 = 4.0f;
+        float sigmaY5 = 4.0f;
+        float theta5 = 0.0; //rotation of sigmaX axis
+        kernel5(i, j) = (exp(-((i*cos(theta5) +j*sin(theta5))*(i*cos(theta5) +j*sin(theta5)))
+                        /(2*sigmaX5*sigmaX5)) / (sqrtf(2*M_PI)*sigmaX5))
+                        *(exp(-((j*cos(theta5) - i*sin(theta5))*(j*cos(theta5) - i*sin(theta5)))
+                        /(2*sigmaY5*sigmaY5)) / (sqrtf(2*M_PI)*sigmaY5));
+    
+    
+        //Compute output image plane
+        image_bounded = BoundaryConditions::repeat_edge(image);    
+        Expr blur_image_help = 0.0f;
+        Expr norm = 0.0f;
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_image_help += image_bounded(x + i, y + j) * (polynomial1(x, y)*kernel1(i, j) +
+                    polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
+                    polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j)); 
+                norm += (polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
+                    polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
+                    polynomial5(x, y)*kernel5(i, j));
+            }
+        }
+        blur_image_help = blur_image_help/norm;
+    
+    
+    
+    
+        //Compute output variance plane
+        variance_bounded = BoundaryConditions::repeat_edge(variance);
+        Expr blur_variance_help = 0.0f;
+//        Expr vNorm2 = 0.0f;
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_variance_help += variance_bounded(x + i, y + j) * (polynomial1(x, y)*kernel1(i, j) +
+                    polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
+                    polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j))
+                    *(polynomial1(x, y)*kernel1(i, j) +
+                    polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
+                    polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j)); 
+//                vNorm2 += (polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
+//                    polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
+//                    polynomial5(x, y)*kernel5(i, j));
+            }
+        }
+    //    blur_variance_help = blur_variance_help/(norm(x,y)*norm(x,y));
+        blur_variance_help = blur_variance_help/(norm*norm);
+        
+
+
+        //Compute output mask plane
+        mask_bounded = BoundaryConditions::repeat_edge(mask);    
+        Expr blur_mask_help = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
+        for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
+            for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
+                blur_mask_help = select((polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
+                    polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
+                    polynomial5(x, y)*kernel5(i, j)) == 0.0f, blur_mask_help, blur_mask_help | mask_bounded(x + i, y + j));
+    //            blur_mask_help = blur_mask_help | mask_bounded(x + i, y + j);    
+            }
+        }
+    
+        //Evaluate image, mask, and variance planes concurrently using a tuple
+        combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, blur_mask_help);
+    }
+
+    void schedule_for_cpu() {
+        // Split the y coordinate of the consumer into strips of 4 scanlines:
+        combined_output.split(y, y_0, yi, 4);
+        // Compute the strips using a thread pool and a task queue.
+        combined_output.parallel(y_0);
+        // Vectorize across x by a factor of four.
+        combined_output.vectorize(x, 4);
+    }
+
+
+    void test_performance() {
+        // Test the performance of the pipeline.
+
+ 
+        // Benchmark the pipeline.
+        image_output(image.width(), image.height());
+        variance_output(variance.width(), variance.height());
+        mask_output(mask.width(), mask.height());
+    
+        Realization r = combined_output.realize(image.width(), image.height());
+        image_output = r[0];
+        variance_output = r[1];
+        mask_output = r[2];
+    
+        double average = 0;
+        double min;
+        double max;
+        double imgTime;
+        double varTime;
+        double maskTime;
+        for (int i = 0; i < NUMBER_OF_RUNS; i++) {
+            double t1 = current_time();
+            r = combined_output.realize(image.width(), image.height());
+            double t2 = current_time();
+            double t3 = current_time();
+            double t4 = current_time();
+            double curTime = (t4-t1);
+            average += curTime;
+            if(i == 0){
+                min = curTime;
+                max = curTime;
+                imgTime = t2-t1;
+                varTime = t3-t2;
+                maskTime = t4-t3;
+            }
+            else{
+                if(curTime < min){
+                    min = curTime;
+                    imgTime = t2-t1;
+                    varTime = t3-t2;
+                    maskTime = t4-t3;
+                }
+                if(curTime > max)
+                    max = curTime;
+            }
+        }
+        average = average/NUMBER_OF_RUNS;
+        std::cout << "Average Time: " << average << ", Min = " <<
+        min << ", Max = " << max << ", with " << NUMBER_OF_RUNS <<
+        " runs" << '\n';
+        cout << "For fastest run total time = " << min << ", imgTime = " << imgTime << ", varTime = " << varTime << 
+        "maskTime = " << maskTime << endl;
+
+/*
+        // If we realize curved into a Halide::Image, that will
+        // unfairly penalize GPU performance by including a GPU->CPU
+        // copy in every run. Halide::Image objects always exist on
+        // the CPU.
+
+        // Halide::Buffer, however, represents a buffer that may
+        // exist on either CPU or GPU or both.
+        Buffer output(UInt(8), input.width(), input.height(), input.channels());
+
+        // Run the filter once to initialize any GPU runtime state.
+        curved.realize(output);
+
+        // Now take the best of 3 runs for timing.
+        double best_time;
+        for (int i = 0; i < 3; i++) {
+
+            double t1 = current_time();
+
+            // Run the filter 100 times.
+            for (int j = 0; j < 100; j++) {
+                curved.realize(output);
+            }
+
+            // Force any GPU code to finish by copying the buffer back to the CPU.
+            output.copy_to_host();
+
+            double t2 = current_time();
+
+            double elapsed = (t2 - t1)/100;
+            if (i == 0 || elapsed < best_time) {
+                best_time = elapsed;
+            }
+        }
+
+        printf("%1.4f milliseconds\n", best_time);
+*/    
+    }
+
+    void debug(){
+
+        //Check out what is happening
+        combined_output.print_loop_nest();
+        // Print out pseudocode for the pipeline.
+        combined_output.compile_to_lowered_stmt("linearCombinationKernel1BlurImage.html", {image}, HTML);
+
+    }
+};
 
 
 int main(int argc, char *argv[]) {
+
 #ifndef STANDALONE
     auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
     int width = im.getWidth(), height = im.getHeight();
@@ -37,9 +596,8 @@ int main(int argc, char *argv[]) {
     int width = 2048, height = 1489;
     printf("[no load]");
 #endif
-    printf("Loaded: %d x %d\n", width, height);
 
-    //store image data in img_var(x, y, 0) and variance data in img_var(x, y, 1)
+    printf("Loaded: %d x %d\n", width, height);
     Image<float> image(width, height);
     Image<float> variance(width, height);
     Image<uint16_t> mask(width, height);
@@ -56,12 +614,38 @@ int main(int argc, char *argv[]) {
         }
     }
 #endif
+    convolveOneSpatiallyVaryingKernelPipeline p1(image, variance, mask);
+
+    p1.schedule_for_cpu();
+    p1.test_performance();
+//    p1.debug(); 
 
 
-    int boundingBox = 5; 
-    Var x, y, i, j, i_v, y0, yi;
 
-    //compute output image and variance
+#ifndef STANDALONE
+    //write image out
+    auto imOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
+    for (int y = 0; y < imOut.getHeight(); y++) {
+        afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = imOut.x_at(0, y);
+
+        for (int x = 0; x < imOut.getWidth(); x++){
+            afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
+            curPixel(p1.image_output(x, y), p1.mask_output(x, y), p1.variance_output(x, y));
+            (*inPtr) = curPixel;
+            inPtr++;
+
+        }
+    }
+
+    imOut.writeFits("./halideLinearCombination1.fits");
+#endif
+
+}
+
+
+
+
+//Other polynomials
 /*    Func polynomial1 ("polynomial1");
     polynomial1(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
                      + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
@@ -215,353 +799,3 @@ int main(int argc, char *argv[]) {
                      + 4.000006f*y*y +  4.000000007f*x*x*x + 4.000000008f*x*x*y + 4.000000009f*x*y*y
                      + 4.0000000011f*y*y*y;
 */
-    Func polynomial1 ("polynomial1");
-    polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.4f*x*x + 0.5f*x*y
-                     + 0.6f*y*y +  0.0007f*x*x*x + 0.0008f*x*x*y + 0.0009f*x*y*y
-                     + 0.00011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial2 ("polynomial2");
-    polynomial2(x, y) = 1.1f + 1.002f*x + 1.003f*y + 1.4f*x*x + 1.5f*x*y
-                     + 1.6f*y*y +  1.0007f*x*x*x + 1.0008f*x*x*y + 1.0009f*x*y*y
-                     + 1.00011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial3 ("polynomial3");
-    polynomial3(x, y) = 2.1f + 2.002f*x + 2.003f*y + 2.4f*x*x + 2.5f*x*y
-                     + 2.6f*y*y +  2.0007f*x*x*x + 2.0008f*x*x*y + 2.0009f*x*y*y
-                     + 2.00011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial4 ("polynomial4");
-    polynomial4(x, y) = 3.1f + 3.002f*x + 3.003f*y + 3.4f*x*x + 3.5f*x*y
-                     + 3.6f*y*y +  3.0007f*x*x*x + 3.0008f*x*x*y + 3.0009f*x*y*y
-                     + 3.00011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial5 ("polynomial5");
-    polynomial5(x, y) = 4.1f + 4.002f*x + 4.003f*y + 4.4f*x*x + 4.5f*x*y
-                     + 4.6f*y*y +  4.0007f*x*x*x + 4.0008f*x*x*y + 4.0009f*x*y*y
-                     + 4.00011f*y*y*y;
-
-    //Kernel #1
-    Func kernel1;
-    float sigmaX1 = 2.0f;
-    float sigmaY1 = 2.0f;
-    float theta1 = 0.0f; //rotation of sigmaX axis
-    kernel1(x, y) = (exp(-((x*cos(theta1) +y*sin(theta1))*(x*cos(theta1) +y*sin(theta1)))
-                    /(2*sigmaX1*sigmaX1)) / (sqrtf(2*M_PI)*sigmaX1))
-                    *(exp(-((y*cos(theta1) - x*sin(theta1))*(y*cos(theta1) - x*sin(theta1)))
-                    /(2*sigmaY1*sigmaY1)) / (sqrtf(2*M_PI)*sigmaY1));
-
-
-
-    //Kernel #2
-    Func kernel2;
-    float sigmaX2 = 0.5f;
-    float sigmaY2 = 4.0f;
-    float theta2 = 0.0f; //rotation of sigmaX axis
-    kernel2(x, y) = (exp(-((x*cos(theta2) +y*sin(theta2))*(x*cos(theta2) +y*sin(theta2)))
-                    /(2*sigmaX2*sigmaX2)) / (sqrtf(2*M_PI)*sigmaX2))
-                    *(exp(-((y*cos(theta2) - x*sin(theta2))*(y*cos(theta2) - x*sin(theta2)))
-                    /(2*sigmaY2*sigmaY2)) / (sqrtf(2*M_PI)*sigmaY2));
-
-    //Kernel #3
-    Func kernel3;
-    float sigmaX3 = 0.5f;
-    float sigmaY3 = 4.0f;
-    float theta3 = 3.14159f/4; //rotation of sigmaX axis
-    kernel3(x, y) = (exp(-((x*cos(theta3) +y*sin(theta3))*(x*cos(theta3) +y*sin(theta3)))
-                    /(2*sigmaX3*sigmaX3)) / (sqrtf(2*M_PI)*sigmaX3))
-                    *(exp(-((y*cos(theta3) - x*sin(theta3))*(y*cos(theta3) - x*sin(theta3)))
-                    /(2*sigmaY3*sigmaY3)) / (sqrtf(2*M_PI)*sigmaY3));
-    //Kernel #4
-    Func kernel4;
-    float sigmaX4 = 0.5f;
-    float sigmaY4 = 4.0f;
-    float theta4 = 3.14159f/2; //rotation of sigmaX axis
-    kernel4(x, y) = (exp(-((x*cos(theta4) +y*sin(theta4))*(x*cos(theta4) +y*sin(theta4)))
-                    /(2*sigmaX4*sigmaX4)) / (sqrtf(2*M_PI)*sigmaX4))
-                    *(exp(-((y*cos(theta4) - x*sin(theta4))*(y*cos(theta4) - x*sin(theta4)))
-                    /(2*sigmaY4*sigmaY4)) / (sqrtf(2*M_PI)*sigmaY4));
-
-
-    //Kernel #5
-    Func kernel5;
-    float sigmaX5 = 4.0f;
-    float sigmaY5 = 4.0f;
-    float theta5 = 0.0; //rotation of sigmaX axis
-    kernel5(x, y) = (exp(-((x*cos(theta5) +y*sin(theta5))*(x*cos(theta5) +y*sin(theta5)))
-                    /(2*sigmaX5*sigmaX5)) / (sqrtf(2*M_PI)*sigmaX5))
-                    *(exp(-((y*cos(theta5) - x*sin(theta5))*(y*cos(theta5) - x*sin(theta5)))
-                    /(2*sigmaY5*sigmaY5)) / (sqrtf(2*M_PI)*sigmaY5));
-
-
-    //Compute output image plane
-    Func image_bounded ("image_bounded");
-    image_bounded = BoundaryConditions::repeat_edge(image);
-
-
-    //Spatially Invariant Implementation 1
-/*    Expr blur_image_help = 0.0f;
-    Expr norm = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help += image_bounded(x + i, y + j) * (kernel1(i, j) + kernel2(i, j) +
-                                kernel3(i, j) + kernel4(i, j) + kernel5(i, j)); 
-            norm += (kernel1(i, j) + kernel2(i, j) + kernel3(i, j) + kernel4(i, j) + kernel5(i, j));
-        }
-    }
-    blur_image_help = blur_image_help/norm;
-    Func blurImage ("blurImage");
-    blurImage(x, y) = blur_image_help;
-*/
-
-    //Spatially Invariant Implementation 2
-
-    Expr blur_image_help1 = 0.0f;
-    Expr norm1 = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help1 += image_bounded(x + i, y + j) * kernel1(i, j); 
-            norm1 += kernel1(i, j);
-        }
-    }
-    blur_image_help1 = blur_image_help1/norm1;
-    Func blurImage1 ("blurImage1");
-    blurImage1(x, y) = blur_image_help1;
-
-    Expr blur_image_help2 = 0.0f;
-    Expr norm2 = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help2 += image_bounded(x + i, y + j) * kernel2(i, j); 
-            norm2 += kernel2(i, j);
-        }
-    }
-    blur_image_help2 = blur_image_help2/norm2;
-    Func blurImage2 ("blurImage2");
-    blurImage2(x, y) = blur_image_help2;
-
-    Expr blur_image_help3 = 0.0f;
-    Expr norm3 = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help3 += image_bounded(x + i, y + j) * kernel3(i, j); 
-            norm3 += kernel3(i, j);
-        }
-    }
-    blur_image_help3 = blur_image_help3/norm3;
-    Func blurImage3 ("blurImage3");
-    blurImage3(x, y) = blur_image_help3;
-
-    Expr blur_image_help4 = 0.0f;
-    Expr norm4 = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help4 += image_bounded(x + i, y + j) * kernel4(i, j); 
-            norm4 += kernel4(i, j);
-        }
-    }
-    blur_image_help4 = blur_image_help4/norm4;
-    Func blurImage4 ("blurImage4");
-    blurImage4(x, y) = blur_image_help4;
-
-    Expr blur_image_help5 = 0.0f;
-    Expr norm5 = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help5 += image_bounded(x + i, y + j) * kernel5(i, j); 
-            norm5 += kernel5(i, j);
-        }
-    }
-    blur_image_help5 = blur_image_help5/norm5;
-    Func blurImage5 ("blurImage5");
-    blurImage5(x, y) = blur_image_help5;
-
-
-//    Expr blur_image_help = (blurImage1(x, y)*polynomial1(x, y) + blurImage2(x, y)*polynomial2(x, y)
-//                     + blurImage3(x, y)*polynomial3(x, y) + blurImage4(x, y)*polynomial4(x, y) 
-//                     + blurImage5(x, y)*polynomial5(x, y))/ (polynomial1(x, y) 
-//                        + polynomial2(x, y) + polynomial3(x, y) + polynomial4(x, y)
-//                        + polynomial5(x, y));
-
-    Expr blur_image_help = (blurImage1(x, y) + blurImage2(x, y)
-                     + blurImage3(x, y) + blurImage4(x, y) 
-                     + blurImage5(x, y));// /(polynomial1(x, y) 
-//                        + polynomial2(x, y) + polynomial3(x, y) + polynomial4(x, y)
-//                        + polynomial5(x, y));
-
-
-//    Func blurImage ("blurImage");
-//    blurImage(x, y) = (blur_image_help1 + blur_image_help2 + blur_image_help3 + 
-//                        blur_image_help4 + blur_image_help5)/(5*norm1);
-
-
-
-
-
-    //Spatially Variant Implementation 1
-/*    Expr blur_image_help = 0.0f;
-    Expr norm = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_image_help += image_bounded(x + i, y + j) * (polynomial1(x, y)*kernel1(i, j) +
-                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
-                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j)); 
-            norm += (polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
-                polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
-                polynomial5(x, y)*kernel5(i, j));
-        }
-    }
-    blur_image_help = blur_image_help/norm;
-*/
-
-
-
-
-    //Compute output variance plane
-    Func variance_bounded ("variance_bounded");
-    variance_bounded = BoundaryConditions::repeat_edge(variance);
-    //compute Variance output
-    Func blurVariance ("blurVariance");
-    Expr blur_variance_help = 0.0f;
-    Expr vNorm2 = 0.0f;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            blur_variance_help += variance_bounded(x + i, y + j) * (polynomial1(x, y)*kernel1(i, j) +
-                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
-                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j))
-                *(polynomial1(x, y)*kernel1(i, j) +
-                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
-                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j)); 
-            vNorm2 += (polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
-                polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
-                polynomial5(x, y)*kernel5(i, j));
-        }
-    }
-//    blur_variance_help = blur_variance_help/(norm(x,y)*norm(x,y));
-    blur_variance_help = blur_variance_help/(vNorm2*vNorm2);
-
-
-
-
-    //Compute output mask plane
-    Func mask_bounded ("mask_bounded");
-    mask_bounded = BoundaryConditions::repeat_edge(mask);
-
-    Func maskOut ("maskOut");
-
-    Expr maskOutHelp = cast<uint16_t>(0);
-
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            maskOutHelp = select((polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
-                polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
-                polynomial5(x, y)*kernel5(i, j)) == 0.0f, maskOutHelp, maskOutHelp | mask_bounded(x + i, y + j));
-//            maskOutHelp = maskOutHelp | mask_bounded(x + i, y + j);    
-        }
-    }
-
-    //Evaluate image, mask, and variance planes concurrently using a tuple
-    Func combined_output ("combined_output");
-//    combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
-
-    Expr fakeVar = variance_bounded(x, y) + 2;
-    Expr fakeMask = mask_bounded(x, y) + 2;
-
-    combined_output(x, y) = Tuple(blur_image_help, fakeVar, fakeMask);
-
-
-    // Split the y coordinate of the consumer into strips of 4 scanlines:
-    combined_output.split(y, y0, yi, 4);
-    // Compute the strips using a thread pool and a task queue.
-    combined_output.parallel(y0);
-    // Vectorize across x by a factor of four.
-    combined_output.vectorize(x, 4);
-
-//    blurImage1.compute_root();
-//    blurImage2.compute_root();
-//    blurImage3.compute_root();
-//    blurImage4.compute_root();
-//    blurImage5.compute_root();
-//
-    //Check out what is happening
-//    blurImage.print_loop_nest();
-    // Print out pseudocode for the pipeline.
-//    blurImage.compile_to_lowered_stmt("linearCombinationKernel1BlurImage.html", {image}, HTML);
-//    blurImage.compile_to_c("linearCombinationKernel1_C_Code.cpp", std::vector<Argument>(), "linearCombinationKernel1_C_Code");
-//    blurVariance.compile_to_lowered_stmt("blur.html", {variance}, HTML);
-
-
-
-    // Benchmark the pipeline.
-    Image<float> image_output(image.width(), image.height());
-    Image<float> variance_output(variance.width(), variance.height());
-    Image<uint16_t> mask_output(mask.width(), mask.height());
-
-    Realization r = combined_output.realize(image.width(), image.height());
-    image_output = r[0];
-    variance_output = r[1];
-    mask_output = r[2];
-
-    double average = 0;
-    double min;
-    double max;
-    double imgTime;
-    double varTime;
-    double maskTime;
-    int numberOfRuns = 5;
-    for (int i = 0; i < numberOfRuns; i++) {
-        double t1 = current_time();
-        r = combined_output.realize(image.width(), image.height());
-        double t2 = current_time();
-        double t3 = current_time();
-        double t4 = current_time();
-        double curTime = (t4-t1);
-        average += curTime;
-        if(i == 0){
-            min = curTime;
-            max = curTime;
-            imgTime = t2-t1;
-            varTime = t3-t2;
-            maskTime = t4-t3;
-        }
-        else{
-            if(curTime < min){
-                min = curTime;
-                imgTime = t2-t1;
-                varTime = t3-t2;
-                maskTime = t4-t3;
-            }
-            if(curTime > max)
-                max = curTime;
-        }
-    }
-    average = average/numberOfRuns;
-    std::cout << "Average Time: " << average << ", Min = " <<
-    min << ", Max = " << max << ", with " << numberOfRuns <<
-    " runs" << '\n';
-    cout << "For fastest run total time = " << min << ", imgTime = " << imgTime << ", varTime = " << varTime << 
-    "maskTime = " << maskTime << endl;
-
-#ifndef STANDALONE
-    //write image out
-    auto imOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
-    for (int y = 0; y < imOut.getHeight(); y++) {
-    	afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = imOut.x_at(0, y);
-
-        for (int x = 0; x < imOut.getWidth(); x++){
-        	afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
-            curPixel(image_output(x, y), mask_output(x, y), variance_output(x, y));
-        	(*inPtr) = curPixel;
-        	inPtr++;
-
-        }
-    }
-
-	imOut.writeFits("./halideLinearCombination1.fits");
-#endif
-
-}
-
