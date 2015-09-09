@@ -50,7 +50,10 @@ public:
 
     void schedule_for_gpu();
 
-    void test_performance();
+    void test_performance_cpu();
+
+    void test_performance_gpu();
+
 };
 
 
@@ -75,7 +78,10 @@ public:
 
 	void schedule_for_gpu();
 
-    void test_performance();
+    void test_performance_cpu();
+
+    void test_performance_gpu();
+
 
     void debug();
 };

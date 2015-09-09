@@ -12,8 +12,8 @@
 //
 //LD_LIBRARY_PATH=./bin:Linux64/afw/10.1+1/lib/:Linux64/daf_persistence/10.1+1/lib/:Linux64/daf_base/10.1+2/lib/:Linux64/boost/1.55.0.1.lsst2+3/lib/:Linux64/xpa/2.1.15.lsst2/lib/:Linux64/pex_policy/10.1+1/lib/:Linux64/pex_logging/10.1+1/lib/:Linux64/utils/10.1+1/lib/:Linux64/pex_exceptions/10.1+1/lib/:Linux64/base/10.1+1/lib/:Linux64/wcslib/4.14+7/lib/:Linux64/cfitsio/3360.lsst1/lib/:Linux64/gsl/1.16.lsst1/lib/:Linux64/minuit2/5.28.00/lib:Linux64/mysql/5.1.65.lsst2/lib/ ./linearCombinationKernel1
 
-//this kernel is a linear combination of guassians that spatially varying linear combination
-//kernel once for the image, mask, and variance planes using a tuple
+//this kernel is a spatially varying linear combination of guassians that 
+//uses tuples for fast evaluation
 
 #include "linearCombinationKernel1.h"
 
@@ -21,7 +21,7 @@
 convolveKernelsSeparatelyThenCombinePipeline::convolveKernelsSeparatelyThenCombinePipeline(Image<float> image_, Image<float> variance_,
     Image<uint16_t> mask_): image(image_), variance(variance_), mask(mask_) {
 
-    //Polynomials that define weights of spatially variant linear combination of 5 kernels
+    //Polynomials that define weights of spatially varying linear combination of 5 kernels
     polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.4f*x*x + 0.5f*x*y
                      + 0.6f*y*y +  0.0007f*x*x*x + 0.0008f*x*x*y + 0.0009f*x*y*y
                      + 0.00011f*y*y*y;
@@ -192,7 +192,7 @@ void convolveKernelsSeparatelyThenCombinePipeline::schedule_for_cpu() {
     // Compute the strips using a thread pool and a task queue.
     combined_output.parallel(y_0);
     // Vectorize across x by a factor of four.
-    combined_output.vectorize(x, 4);
+    combined_output.vectorize(x, 8);
 
 //      blurImage1.compute_root();
 //      blurImage2.compute_root();
@@ -235,10 +235,10 @@ void convolveKernelsSeparatelyThenCombinePipeline::schedule_for_gpu() {
     // performance though, so we'll leave it commented out.
     // target.set_feature(Target::Debug);
 
-    curved.compile_jit(target);
+    combined_output.compile_jit(target);
 }
 
-void convolveKernelsSeparatelyThenCombinePipeline::test_performance() {
+void convolveKernelsSeparatelyThenCombinePipeline::test_performance_cpu() {
     // Benchmark the pipeline.
     image_output(image.width(), image.height());
     variance_output(variance.width(), variance.height());
@@ -471,7 +471,7 @@ void convolveOneSpatiallyVaryingKernelPipeline::schedule_for_cpu() {
     // Compute the strips using a thread pool and a task queue.
     combined_output.parallel(y_0);
     // Vectorize across x by a factor of four.
-    combined_output.vectorize(x, 4);
+    combined_output.vectorize(x, 8);
 }
 
 // Now a schedule that uses CUDA or OpenCL.
@@ -508,10 +508,10 @@ void convolveOneSpatiallyVaryingKernelPipeline::schedule_for_gpu() {
     // performance though, so we'll leave it commented out.
     // target.set_feature(Target::Debug);
 
-    curved.compile_jit(target);
+    combined_output.compile_jit(target);
 }
 
-void convolveOneSpatiallyVaryingKernelPipeline::test_performance() {
+void convolveOneSpatiallyVaryingKernelPipeline::test_performance_cpu() {
     // Test the performance of the pipeline.
 
  
@@ -562,45 +562,53 @@ void convolveOneSpatiallyVaryingKernelPipeline::test_performance() {
     min << ", Max = " << max << ", with " << NUMBER_OF_RUNS <<
     " runs" << '\n';
     cout << "For fastest run total time = " << min << ", imgTime = " << imgTime << ", varTime = " << varTime << 
-    "maskTime = " << maskTime << endl;
+    "maskTime = " << maskTime << endl;   
+}
 
-/*
-        // If we realize curved into a Halide::Image, that will
-        // unfairly penalize GPU performance by including a GPU->CPU
-        // copy in every run. Halide::Image objects always exist on
-        // the CPU.
+void convolveOneSpatiallyVaryingKernelPipeline::test_performance_gpu() {
+    // Test the performance of the pipeline.
+    // If we realize curved into a Halide::Image, that will
+    // unfairly penalize GPU performance by including a GPU->CPU
+    // copy in every run. Halide::Image objects always exist on
+    // the CPU.
 
-        // Halide::Buffer, however, represents a buffer that may
-        // exist on either CPU or GPU or both.
-        Buffer output(UInt(8), input.width(), input.height(), input.channels());
+    // Halide::Buffer, however, represents a buffer that may
+    // exist on either CPU or GPU or both.
+//    Buffer output(UInt(8), input.width(), input.height(), input.channels());
 
-        // Run the filter once to initialize any GPU runtime state.
-        curved.realize(output);
+    // Run the filter once to initialize any GPU runtime state.
+    Realization r = combined_output.realize(image.width(), image.height());
+    image_output = r[0];
+    variance_output = r[1];
+    mask_output = r[2];
 
-        // Now take the best of 3 runs for timing.
-        double best_time;
-        for (int i = 0; i < 3; i++) {
+    // Now take the best of 3 runs for timing.
+    double best_time;
+    for (int i = 0; i < 3; i++) {
 
-            double t1 = current_time();
+        double t1 = current_time();
 
-            // Run the filter 100 times.
-            for (int j = 0; j < 100; j++) {
-                curved.realize(output);
-            }
-
-            // Force any GPU code to finish by copying the buffer back to the CPU.
-            output.copy_to_host();
-
-            double t2 = current_time();
-
-            double elapsed = (t2 - t1)/100;
-            if (i == 0 || elapsed < best_time) {
-                best_time = elapsed;
-            }
+        // Run the filter 100 times.
+        for (int j = 0; j < 100; j++) {
+            combined_output.realize(image.width(), image.height());
         }
 
-        printf("%1.4f milliseconds\n", best_time);
-*/    
+        // Force any GPU code to finish by copying the buffer back to the CPU.
+//        output.copy_to_host();
+        //Does this do the equivalent?
+        image_output = r[0];
+        variance_output = r[1];
+        mask_output = r[2];
+
+        double t2 = current_time();
+
+        double elapsed = (t2 - t1)/100;
+        if (i == 0 || elapsed < best_time) {
+            best_time = elapsed;
+        }
+    }
+
+    printf("%1.4f milliseconds\n", best_time);
 }
 
 void convolveOneSpatiallyVaryingKernelPipeline::debug(){
@@ -642,7 +650,11 @@ int main(int argc, char *argv[]) {
     convolveOneSpatiallyVaryingKernelPipeline p1(image, variance, mask);
 
     p1.schedule_for_cpu();
-    p1.test_performance();
+    p1.test_performance_cpu();
+
+//    p1.schedule_for_gpu();
+//    p1.test_performance_gpu();
+
 //    p1.debug(); 
 
 
