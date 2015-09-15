@@ -74,16 +74,23 @@ Halide::Expr getHalidePolynomial(vector<float> coefficients){
 }
 
 
+//Base class for 2 dimensional kernels
+class kernel2D{
+public:
+    //kernel of all 0's (probably not useful)
+    virtual Halide::Expr operator()(int i, int j){
+        return 0.0f;
+    }
+};
+
 //Represents a 2 dimensional gaussian with standard deviations sigmaI and sigmaJ in its
 //i and j dimensions respectively.  The guassian's i, j coordinate system is rotated by theta 
 //radians with respect to the image's x, y coordinate system.
 //The guassian is not normalized.
-class gaussian2D{
+class gaussian2D: public kernel2D{
 public:
     gaussian2D(float sigmaI_, float sigmaJ_, float theta_)
         : sigmaI(sigmaI_), sigmaJ(sigmaJ_), theta(theta_){}
-
-    gaussian2D(){} //empty constructor for use by child
 
 //    Halide::Expr operator()(Halide::Var x, Halide::Var y){
     Halide::Expr operator()(int i, int j){
@@ -103,7 +110,7 @@ private:
 //guassian's i, j coordinate system is rotated by spatialTheta(x, y) (a polynomial) radians 
 //with respect to the image's x, y coordinate system.
 //The guassian is not normalized.
-class spatiallyVaryingGaussian2D: public gaussian2D{
+class spatiallyVaryingGaussian2D: public kernel2D{
 public:
     spatiallyVaryingGaussian2D(polynomial spatialSigmaI_, polynomial spatialSigmaJ_, 
         polynomial spatialTheta_)
@@ -188,16 +195,8 @@ public:
 
     //Functions to create specific types of kernels
 
-
-
-    virtual void createLinearCombinationProgram_POOR_NORMALIZATION(
-        vector<polynomial> weights, vector<gaussian2D> kernels) = 0;
-
-    virtual void createLinearCombinationProgram_POOR_NORMALIZATION_FAST(
-        vector<polynomial> weights, vector<gaussian2D> kernels) = 0;
-
     virtual void createLinearCombinationProgram(
-        vector<polynomial> weights, vector<gaussian2D> kernels) = 0;
+        vector<polynomial> weights, vector<kernel2D> kernels) = 0;
 
     //Save .fits images using the LSST stack
     //Before running, load the LSST stack using
@@ -237,17 +236,7 @@ public:
     generalKernelWithTuples(string imageLocation, int kernelSize)
         : generalKernel(imageLocation, kernelSize){}
 
-    void createLinearCombinationProgram_VERBOSE(
-        vector<polynomial> weights, vector<gaussian2D> kernels);
-
-
-    void createLinearCombinationProgram_POOR_NORMALIZATION(
-        vector<polynomial> weights, vector<gaussian2D> kernels);
-
-    void createLinearCombinationProgram_POOR_NORMALIZATION_FAST(
-        vector<polynomial> weights, vector<gaussian2D> kernels);
-
-    void createLinearCombinationProgram(vector<polynomial> weights, vector<gaussian2D> kernels);
+    void createLinearCombinationProgram(vector<polynomial> weights, vector<kernel2D> kernels);
 
     void schedule_for_cpu();
     void schedule_for_gpu();
@@ -266,7 +255,7 @@ public:
     generalKernelWithoutTuples(string imageLocation, int kernelSize)
         : generalKernel(imageLocation, kernelSize){}
 
-    void createLinearCombinationProgram(vector<polynomial> weights, vector<gaussian2D> kernels);
+    void createLinearCombinationProgram(vector<polynomial> weights, vector<kernel2D> kernels);
 
     void schedule_for_cpu();
     void schedule_for_gpu();

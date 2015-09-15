@@ -220,8 +220,13 @@ void generalKernel::save_fits_image(string imageDestination){
 //Kernels are not required to be normalized, but are not individually normalized.
 //The total linear combination of all basis kernels is normalized.
 //Individual kernel normalization can be controlled using the polynomial coefficients.
-void generalKernel::createLinearCombinationProgram_POOR_NORMALIZATION(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
+void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weights,
+    std::vector<kernel2D> kernels){
+
+    if(weights.size() != kernels.size()){
+        cout << "ERROR, must supply equal number of weights and kernels" << endl;
+        return;
+    }
 
     //Condensed version generalized for any number of kernels/weights
     Expr blur_image_help = 0.0f;
@@ -233,7 +238,7 @@ void generalKernel::createLinearCombinationProgram_POOR_NORMALIZATION(std::vecto
     for(int i = -bounding_box; i <= bounding_box; i++){
         for(int j = -bounding_box; j <= bounding_box; j++){
             cur_kernel_location = 0.0f;
-            for(int h = 0; h <=kernels.size(); h++){
+            for(int h = 0; h < kernels.size(); h++){
                 cur_kernel_location += weights[h]()*kernels[h](i, j);
                 norm += weights[h]()*kernels[h](i, j);
             }
@@ -294,301 +299,15 @@ void generalKernel::createLinearCombinationProgram_POOR_NORMALIZATION(std::vecto
 */
 }
 
-
-//This method doesn't work because of the variance plane
-void generalKernel::createLinearCombinationProgram_POOR_NORMALIZATION_FAST(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
-
-    Expr blur_image_help = 0.0f;
-    Expr blur_variance_help = 0.0f;
-    Expr norm = 0.0f;
-    Expr cur_kernel_norm;
-    Expr cur_kernel_image_convolution;
-    Expr cur_kernel_variance_convolution;
-    total_mask_output = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
-
-
-//TESTING
-
-    //Condensed version generalized for any number of kernels/weights
-    Expr cur_kernel_location;
-    total_mask_output = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
-
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            cur_kernel_location = 0.0f;
-            for(int h = 0; h <=kernels.size(); h++){
-                blur_image_help += image_bounded(x + i, y + j) * weights[h]()*kernels[h](i, j);
-                blur_variance_help += variance_bounded(x + i, y + j)
-                                        * weights[h]()*kernels[h](i, j)* weights[h]()*kernels[h](i, j);
-                norm += weights[h]()*kernels[h](i, j);
-            }
-
-//            total_mask_output = select(cur_kernel_location == 0.0f, total_mask_output,
-//                                total_mask_output | mask_bounded(x + i, y + j));
-
-            total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
-        }
-    }
-    total_image_output = blur_image_help/norm;
-    total_variance_output = blur_variance_help/(norm*norm);
-
-
-
-//DONE TESTING    
-
-
-
-
-/* NOT WORKING
-    for(int h = 0; h <=kernels.size(); h++){
-        cur_kernel_norm = 0.0f;
-        cur_kernel_image_convolution = 0.0f;
-        cur_kernel_variance_convolution = 0.0f;
-        for(int i = -bounding_box; i <= bounding_box; i++){
-            for(int j = -bounding_box; j <= bounding_box; j++){
-                cur_kernel_image_convolution += image_bounded(x + i, y + j)*kernels[h](i, j);
-                cur_kernel_variance_convolution += variance_bounded(x + i, y + j)
-                                                    *kernels[h](i, j)*kernels[h](i, j);
-
-                //assumes kernel is non-zero everywhere
-                //if valid, this method is more efficient when there are few kernels
-                //in the linear combination
-                if(h == 0){                                    
-                    total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
-                }
-
-                cur_kernel_norm += kernels[h](i, j);
-            }
-        }
-        blur_image_help += cur_kernel_image_convolution * weights[h]();
-        blur_variance_help += cur_kernel_variance_convolution * weights[h]();
-        norm += weights[h]() * cur_kernel_norm;
-
-    }
-    total_image_output = blur_image_help/norm;
-    total_variance_output = blur_variance_help/(norm*norm);
-*/
-}
-
-void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
-
-    if(weights.size() != kernels.size()){
-        cout << "ERROR, must supply equal number of weights and kernels" << endl;
-        return;
-    }
-
-    Expr cur_kernel_image_output;
-    total_image_output = 0.0f;
-
-    Expr cur_kernel_variance_output;
-    total_variance_output = 0.0f;
-
-    Expr cur_kernel_norm;
-    Expr weights_norm = 0;
-    //x and y are Halide Vars from generalKernel.h
-    for(int i = 0; i < weights.size(); i++){
-        cur_kernel_image_output = 0.0f;
-        cur_kernel_variance_output = 0.0f;
-        cur_kernel_norm = 0.0f;
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            for(int k = -bounding_box; k <= bounding_box; k++){
-                cur_kernel_image_output += image_bounded(x + j, y + k) * kernels[i](j, k);
-               cur_kernel_variance_output += variance_bounded(x + j, y + k) * kernels[i](j, k) 
-                                        * kernels[i](j, k);
-                cur_kernel_norm += kernels[i](j, k);
-            }
-        }
-        cur_kernel_image_output = weights[i]() * cur_kernel_image_output/cur_kernel_norm;
-        total_image_output += cur_kernel_image_output;
-
-        cur_kernel_variance_output = weights[i]() * cur_kernel_variance_output/(cur_kernel_norm*cur_kernel_norm);
-        total_variance_output += cur_kernel_variance_output;
-
-        weights_norm += weights[i]();
-    }
-    total_image_output = total_image_output/weights_norm;
-    total_variance_output = total_variance_output/weights_norm;
-
-    //Given gaussian is always non-zero, or all input mask pixels within bounding box
-    //figure out whether a cutoff should be implemented for kernel values close to zero
-    //Compute output mask plane
-    total_mask_output = cast<uint16_t>(0);  //make sure total_mask_output has type uint16
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            total_mask_output = total_mask_output | mask_bounded(x + i, y + j);    
-        }
-    }
-}
-
-
-void generalKernelWithTuples::createLinearCombinationProgram_VERBOSE(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
-
-    if(weights.size() != kernels.size()){
-        cout << "ERROR, must supply equal number of weights and kernels" << endl;
-        return;
-    }
-
-    Expr cur_kernel_image_output;
-    total_image_output = 0.0f;
-
-    Expr cur_kernel_variance_output;
-    total_variance_output = 0.0f;
-
-    Expr cur_kernel_norm;
-    Expr weights_norm = 0;
-
-
-    vector<Expr> kernelNorms;
-    kernelNorms.resize(weights.size());
-
-    Expr weightNorm;
-    weightNorm = 0.0f;
-
-    for(int i = 0; i < weights.size(); i++){
-        kernelNorms[i] = 0.0f;
-        weightNorm += weights[i]();
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            for(int k = -bounding_box; k <= bounding_box; k++){
-                kernelNorms[i] += kernels[i](j, k);
-            }
-        }
-    }
-
-    //x and y are Halide Vars from generalKernel.h
-    total_image_output = 0.0f;
-    Expr total_norm = 0.0f;
-    Expr blurImageHelp = 0.0f;
-    for(int i = 0; i < kernels.size(); i++){
-        cur_kernel_image_output = 0.0f;
-        cur_kernel_variance_output = 0.0f;
-        cur_kernel_norm = 0.0f;
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            for(int k = -bounding_box; k <= bounding_box; k++){
-                total_image_output += image_bounded(x + j, y + k) * kernels[i](j, k) *weights[i]()
-                                            /(weightNorm * kernelNorms[i]);
-
-//Testing, this should be equivalent to POOR_NORMALIZATION, but is not
-//                total_image_output += image_bounded(x + j, y + k) * kernels[i](j, k) *weights[i]()
-//                                            /(weightNorm);
-            }
-        }
-    }
-
-    total_variance_output = variance_bounded(x, y);
-
-
-/*    Expr total_norm = 0.0f;
-    Expr blurImageHelp = 0.0f;
-    for(int i = 0; i < kernels.size(); i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            for(int k = -bounding_box; k <= bounding_box; k++){
-                blurImageHelp += image_bounded(x + j, x + k) * kernels[i](j, k);
-                total_norm += kernels[i](j, k);
-            }
-        }
-        total_image_output = blurImageHelp/total_norm;
-    }
-*/
-
-
-
-
-    //WORKED!!
-/*
-    Expr total_norm = 0.0f;
-    Expr blurImageHelp = 0.0f;
-    for(int h = 0; h < kernels.size(); h++){
-        for(int i = -bounding_box; i <= bounding_box; i++){
-            for(int j = -bounding_box; j <= bounding_box; j++){
-                blurImageHelp += image_bounded(x + i, y + j) * kernels[h](i, j); 
-                total_norm += kernels[h](i, j); 
-            }
-        }
-    }
-    total_image_output = blurImageHelp/total_norm;
-*/
-
-/*    Expr blur_image_help = 0.0f;
-    Expr norm = 0.0f;
-    for(int h = 0; h < kernels.size(); h++){
-        for(int i = -bounding_box; i <= bounding_box; i++){
-            for(int j = -bounding_box; j <= bounding_box; j++){
-                blur_image_help += image_bounded(x + i, y + j) * kernels[h](i, j); 
-                norm += kernels[h](i, j); 
-            }
-        }
-    }
-    total_image_output = blur_image_help/norm;
-*/
-
-
-
-
-
-
-    //x and y are Halide Vars from generalKernel.h
-/*    for(int i = 0; i < weights.size(); i++){
-        cur_kernel_image_output = 0.0f;
-        cur_kernel_variance_output = 0.0f;
-        cur_kernel_norm = 0.0f;
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            for(int k = -bounding_box; k <= bounding_box; k++){
-                cur_kernel_image_output += image_bounded(x + j, x + k) * kernels[i](j, k);
-                cur_kernel_variance_output += variance_bounded(x + j, x + k) * kernels[i](j, k) 
-                                        * kernels[i](j, k);
-                cur_kernel_norm += kernels[i](j, k);
-            }
-        }
-        cur_kernel_image_output = weights[i]() * cur_kernel_image_output/cur_kernel_norm;
-        total_image_output += cur_kernel_image_output;
-
-        cur_kernel_variance_output = weights[i]() * cur_kernel_variance_output/(cur_kernel_norm*cur_kernel_norm);
-        total_variance_output += cur_kernel_variance_output;
-
-        weights_norm += weights[i]();
-    }
-    total_image_output = total_image_output/weights_norm;
-    total_variance_output = total_variance_output/weights_norm;
-*/
-    //Given gaussian is always non-zero, or all input mask pixels within bounding box
-    //figure out whether a cutoff should be implemented for kernel values close to zero
-    //Compute output mask plane
-    total_mask_output = cast<uint16_t>(0);  //make sure total_mask_output has type uint16
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            total_mask_output = total_mask_output | mask_bounded(x + i, y + j);    
-        }
-    }
-
-    combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
-
-}
-
-void generalKernelWithTuples::createLinearCombinationProgram_POOR_NORMALIZATION(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
-        generalKernel::createLinearCombinationProgram_POOR_NORMALIZATION(weights, kernels);
-        combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
-}
-
-void generalKernelWithTuples::createLinearCombinationProgram_POOR_NORMALIZATION_FAST(
-    std::vector<polynomial> weights, std::vector<gaussian2D> kernels){
-        generalKernel::createLinearCombinationProgram_POOR_NORMALIZATION_FAST(weights, kernels);
-        combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
-}
-
 void generalKernelWithTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
+    std::vector<kernel2D> kernels){
         generalKernel::createLinearCombinationProgram(weights, kernels);
         combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
 }
 
 
-
 void generalKernelWithoutTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
+    std::vector<kernel2D> kernels){
         generalKernel::createLinearCombinationProgram(weights, kernels);
 
         image_output(x, y) = total_image_output;
@@ -1019,7 +738,7 @@ int main(int argc, char *argv[]) {
         weights.push_back(curPol);
     }
 
-    std::vector<gaussian2D> kernels;
+    std::vector<kernel2D> kernels;
     kernels.resize(5);
     kernels[0] = gaussian2D(2.0f, 2.0f, 0.0f);
     kernels[1] = gaussian2D(.5f, 4.0f, 0.0f);
@@ -1031,7 +750,7 @@ int main(int argc, char *argv[]) {
 
     //create 5x5 kernel with 
     generalKernelWithTuples p1("./images/calexp-004207-g3-0123.fits", 5);
-    p1.createLinearCombinationProgram_POOR_NORMALIZATION_FAST(weights, kernels);
+    p1.createLinearCombinationProgram(weights, kernels);
 //    p1.createLinearCombinationProgram_POOR_NORMALIZATION_FAST(weights, kernels);
 //    p1.createLinearCombinationProgram(weights, kernels);
     p1.schedule_for_cpu();
