@@ -228,8 +228,36 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
         return;
     }
 
+
+
     //Condensed version generalized for any number of kernels/weights
     Expr blur_image_help = 0.0f;
+    Expr blur_variance_help = 0.0f;
+    Expr norm = 0.0f;
+    Expr cur_kernel_location;
+    total_mask_output = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
+
+    for(int i = -bounding_box; i <= bounding_box; i++){
+        for(int j = -bounding_box; j <= bounding_box; j++){
+            cur_kernel_location = 0.0f;
+            for(int h = 0; h <=kernels.size(); h++){
+                cur_kernel_location += weights[h]()*kernels[h](i, j);
+                norm += weights[h]()*kernels[h](i, j);
+            }
+            blur_image_help += image_bounded(x + i, y + j) * cur_kernel_location;
+            blur_variance_help += variance_bounded(x + i, y + j) 
+                                    * cur_kernel_location * cur_kernel_location;
+
+            total_mask_output = select(cur_kernel_location == 0.0f, total_mask_output,
+                                total_mask_output | mask_bounded(x + i, y + j));
+//            total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
+        }
+    }
+    total_image_output = blur_image_help/norm;
+    total_variance_output = blur_variance_help/(norm*norm);
+
+    //Condensed version generalized for any number of kernels/weights
+/*    Expr blur_image_help = 0.0f;
     Expr blur_variance_help = 0.0f;
     Expr norm = 0.0f;
     Expr cur_kernel_location;
@@ -253,7 +281,7 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
     }
     total_image_output = blur_image_help/norm;
     total_variance_output = blur_variance_help/(norm*norm);
-
+*/
 
 
     //Explicit version for 5 kernels/weights
