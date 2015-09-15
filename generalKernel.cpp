@@ -221,43 +221,15 @@ void generalKernel::save_fits_image(string imageDestination){
 //The total linear combination of all basis kernels is normalized.
 //Individual kernel normalization can be controlled using the polynomial coefficients.
 void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<kernel2D> kernels){
+    std::vector<gaussian2D> kernels){
 
     if(weights.size() != kernels.size()){
         cout << "ERROR, must supply equal number of weights and kernels" << endl;
         return;
     }
 
-
-
     //Condensed version generalized for any number of kernels/weights
     Expr blur_image_help = 0.0f;
-    Expr blur_variance_help = 0.0f;
-    Expr norm = 0.0f;
-    Expr cur_kernel_location;
-    total_mask_output = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
-
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            cur_kernel_location = 0.0f;
-            for(int h = 0; h <=kernels.size(); h++){
-                cur_kernel_location += weights[h]()*kernels[h](i, j);
-                norm += weights[h]()*kernels[h](i, j);
-            }
-            blur_image_help += image_bounded(x + i, y + j) * cur_kernel_location;
-            blur_variance_help += variance_bounded(x + i, y + j) 
-                                    * cur_kernel_location * cur_kernel_location;
-
-            total_mask_output = select(cur_kernel_location == 0.0f, total_mask_output,
-                                total_mask_output | mask_bounded(x + i, y + j));
-//            total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
-        }
-    }
-    total_image_output = blur_image_help/norm;
-    total_variance_output = blur_variance_help/(norm*norm);
-
-    //Condensed version generalized for any number of kernels/weights
-/*    Expr blur_image_help = 0.0f;
     Expr blur_variance_help = 0.0f;
     Expr norm = 0.0f;
     Expr cur_kernel_location;
@@ -281,7 +253,7 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
     }
     total_image_output = blur_image_help/norm;
     total_variance_output = blur_variance_help/(norm*norm);
-*/
+
 
 
     //Explicit version for 5 kernels/weights
@@ -328,14 +300,15 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
 }
 
 void generalKernelWithTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<kernel2D> kernels){
+    std::vector<gaussian2D> kernels){
         generalKernel::createLinearCombinationProgram(weights, kernels);
         combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
 }
 
 
+
 void generalKernelWithoutTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<kernel2D> kernels){
+    std::vector<gaussian2D> kernels){
         generalKernel::createLinearCombinationProgram(weights, kernels);
 
         image_output(x, y) = total_image_output;
@@ -766,7 +739,7 @@ int main(int argc, char *argv[]) {
         weights.push_back(curPol);
     }
 
-    std::vector<kernel2D> kernels;
+    std::vector<gaussian2D> kernels;
     kernels.resize(5);
     kernels[0] = gaussian2D(2.0f, 2.0f, 0.0f);
     kernels[1] = gaussian2D(.5f, 4.0f, 0.0f);
