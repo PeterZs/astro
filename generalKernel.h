@@ -20,6 +20,8 @@ using namespace std;
 using namespace Halide;
 using Halide::Image;
 
+#define PI_FLOAT 3.14159265359f //
+
 
 #define NUMBER_OF_RUNS 5 //number of runs when performance testing
 
@@ -54,6 +56,23 @@ private:
 
 };
 
+//returns the third degree polynomial given by the input coefficients as a Halide Expr
+Halide::Expr getHalidePolynomial(float a, float u, float v, float uu, float uv, float vv,
+    float uuu, float uuv, float uvv, float vvv){
+    return (a + u*x + v*y + uu*x*x + uv*x*y + vv*y*y + uuu*x*x*x + uuv*x*x*y +uvv*x*y*y +
+        vvv*y*y*y);
+}
+
+//returns the third degree polynomial with coefficients given by the input vector
+//as a Halide Expr
+Halide::Expr getHalidePolynomial(vector<float> coefficients){
+    if(coefficients.size() != 10)
+        cout << "Error getHalidePolynomial, coefficient vector does not have 10 coefficients" << endl;
+    return (coefficients[0] + coefficients[1]*x + coefficients[2]*y + coefficients[3]*x*x +
+    coefficients[4]*x*y + coefficients[5]*y*y + coefficients[6]*x*x*x + coefficients[7]*x*x*y +
+    coefficients[8]*x*y*y + coefficients[9]*y*y*y);
+}
+
 
 //Represents a 2 dimensional gaussian with standard deviations sigmaI and sigmaJ in its
 //i and j dimensions respectively.  The guassian's i, j coordinate system is rotated by theta 
@@ -68,10 +87,10 @@ public:
 
 //    Halide::Expr operator()(Halide::Var x, Halide::Var y){
     Halide::Expr operator()(int i, int j){
-        return (exp(-((i*cos(theta) + j*sin(theta)) * (i*cos(theta) + j*sin(theta)))
+        return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
                     /(2*sigmaI*sigmaI))
-                    *exp(-((j*cos(theta) - i*sin(theta)) * (j*cos(theta) - i*sin(theta)))
-                    /(2*sigmaJ*sigmaJ)));
+                    *exp(-((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
+                    /(2*sigmaJ*sigmaJ)) / (2.0f*PI_FLOAT*sigmaI*sigmaJ));
     }
 
 private:
@@ -142,8 +161,6 @@ private:
 //generally faster on the CPU but slower on the GPU.
 class generalKernel {
 public:
-    Func image_bounded, variance_bounded, mask_bounded;
-
 //    Func polynomial1, polynomial2, polynomial3, polynomial4, polynomial5, kernel1, kernel2,
 //    kernel3, kernel4, kernel5, blurImage1, blurImage2, blurImage3, blurImage4, blurImage5,
 //    combined_output, image_output, variance_output,
@@ -164,19 +181,36 @@ public:
     Image<float> variance_output_gpu;
     Image<uint16_t> mask_output_gpu;
 
-    //will use tuples if useTuples==true, will not use tuples if useTuples==false
-    generalKernel(Image<float> image_, Image<float> variance_,
-        Image<uint16_t> mask_, int bounding_box_);
+    generalKernel(string imageLocation, int kernelSize);
 
     //for tuples/no tuples derived classes to call in their constructor 
     generalKernel(){}
 
-    virtual void schedule_for_cpu() = 0;
+    //Functions to create specific types of kernels
 
+
+
+    virtual void createLinearCombinationProgram_POOR_NORMALIZATION(
+        vector<polynomial> weights, vector<gaussian2D> kernels) = 0;
+
+    virtual void createLinearCombinationProgram_POOR_NORMALIZATION_FAST(
+        vector<polynomial> weights, vector<gaussian2D> kernels) = 0;
+
+    virtual void createLinearCombinationProgram(
+        vector<polynomial> weights, vector<gaussian2D> kernels) = 0;
+
+    //Save .fits images using the LSST stack
+    //Before running, load the LSST stack using
+    //$ source ./loadLSST.bash
+    //$ setup afw -t v10_1   (or appropriate version, also may work with simply $setup afw)
+    void save_fits_image(string imageDestination);
+
+    //Kernel schedules
+    virtual void schedule_for_cpu() = 0;
 	virtual void schedule_for_gpu() = 0;
 
+    //Benchmark kernels and get output image
     virtual void test_performance_cpu() = 0;
-
     virtual void test_performance_gpu() = 0;
 
     //check whether the image planes match
@@ -186,9 +220,13 @@ public:
     void debug();
 
 protected:
-    //will use tuples if useTuples==true, will not use tuples if useTuples==false
-    bool useTuples;
+    //Kernel is size (bounding_box*2 + 1) x (bounding_box*2 + 1)
     int bounding_box;
+
+    //Functions used to bound input planes
+    Func image_bounded, variance_bounded, mask_bounded;
+
+    //Halide expressions used to compute output functions
     Expr total_image_output;
     Expr total_variance_output;
     Expr total_mask_output;
@@ -196,73 +234,51 @@ protected:
 
 class generalKernelWithTuples: public generalKernel{
 public:
-    Func combined_output;
+    generalKernelWithTuples(string imageLocation, int kernelSize)
+        : generalKernel(imageLocation, kernelSize){}
 
-    //this constructor only initializes the combined_output Func after total_image_output,
-    //total_variance_output, and total_mask_output Exprs have been initialized by another
-    //constructor
-    generalKernelWithTuples();
+    void createLinearCombinationProgram_VERBOSE(
+        vector<polynomial> weights, vector<gaussian2D> kernels);
+
+
+    void createLinearCombinationProgram_POOR_NORMALIZATION(
+        vector<polynomial> weights, vector<gaussian2D> kernels);
+
+    void createLinearCombinationProgram_POOR_NORMALIZATION_FAST(
+        vector<polynomial> weights, vector<gaussian2D> kernels);
+
+    void createLinearCombinationProgram(vector<polynomial> weights, vector<gaussian2D> kernels);
 
     void schedule_for_cpu();
-//
     void schedule_for_gpu();
 //
     void test_performance_cpu();
-
     void test_performance_gpu();
+
+protected:
+    //Tuple containing final output of all 3 planes
+    Func combined_output;
+
 };
 
 class generalKernelWithoutTuples: public generalKernel{
 public:
-    Func image_output, variance_output, mask_output;
+    generalKernelWithoutTuples(string imageLocation, int kernelSize)
+        : generalKernel(imageLocation, kernelSize){}
 
-    //this constructor only initializes image_output, variance_output,
-    //and mask_output Funcs after total_image_output, total_variance_output,
-    //and total_mask_output Exprs have been initialized by another
-    //constructor
-    generalKernelWithoutTuples();
+    void createLinearCombinationProgram(vector<polynomial> weights, vector<gaussian2D> kernels);
 
     void schedule_for_cpu();
-//
     void schedule_for_gpu();
 //
     void test_performance_cpu();
-
     void test_performance_gpu();
+
+protected:
+    //Final outputs of the planes without using a tuple
+    Func image_output, variance_output, mask_output;
 };
 
-//Create a weighted linear combination of spatially invariant kernels and convolve the 
-//total kernel with the input planes once.  (as opposed to convolving each basis kernel with
-//the input planes and then performing weighted addition on the intermediate output
-//planes)
-class linearCombinationConvolveOnce: public generalKernel{
-public:
-
-    linearCombinationConvolveOnce(Image<float> image_, Image<float> variance_,
-        Image<uint16_t> mask_, int bounding_box_, 
-        std::vector<polynomial> weights, std::vector<gaussian2D> kernels);
-
-//    virtual void schedule_for_cpu();
-//
-//    virtual void schedule_for_gpu();
-//
-//    void test_performance_cpu();
-
-//    void test_performance_gpu();
-
-private:
-};
-
-//class linearCombinationConvolveOnceWithTuples: // public linearCombinationConvolveOnce,
-class linearCombinationConvolveOnceWithTuples: 
-    public generalKernelWithTuples{
-public:
-    linearCombinationConvolveOnceWithTuples(
-        Image<float> image_, Image<float> variance_, Image<uint16_t> mask_, 
-        int bounding_box_, std::vector<polynomial> weights, std::vector<gaussian2D> kernels)
-            : linearCombinationConvolveOnce(image_, variance_, mask_, bounding_box_, weights, 
-            kernels), generalKernelWithTuples(){}
-};
 
 
 
