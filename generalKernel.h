@@ -209,9 +209,10 @@ public:
     virtual void test_performance_cpu() = 0;
     virtual void test_performance_gpu() = 0;
 
-    //check whether the image planes match
-    //implement more if desired later
-    void test_correctness(Image<float> reference_output);
+    //check whether the CPU output matches the .fits image
+    //referred to by referenceLocation
+    //enter 0 for little information, 1 for more details
+    void test_correctness(string referenceLocation, int details);
 
     void debug();
 

@@ -19,7 +19,7 @@
 
 #include "generalKernel.h"
 
-generalKernel::generalKernel(string imageLocation ,int kernelSize) {
+generalKernel::generalKernel(string imageLocation, int kernelSize) {
 
     bounding_box = (kernelSize - 1)/2;
 
@@ -58,134 +58,6 @@ generalKernel::generalKernel(string imageLocation ,int kernelSize) {
     image_bounded = BoundaryConditions::repeat_edge(image);    
     variance_bounded = BoundaryConditions::repeat_edge(variance);
     mask_bounded = BoundaryConditions::repeat_edge(mask);    
-
-    //TESTING
-//    image_output_cpu = image;
-//    variance_output_cpu = variance;
-//    mask_output_cpu = mask;
-//
-//    save_fits_image("./images/linearCombination/gk1");
-
-
-    //DONE TESTING
-    //original LSST example
-/*    Func polynomial1 ("polynomial1");
-    polynomial1(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial2 ("polynomial2");
-    polynomial2(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial3 ("polynomial3");
-    polynomial3(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial4 ("polynomial4");
-    polynomial4(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial5 ("polynomial5");
-    polynomial5(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //Polynomials that define weights of spatially varying linear combination of 5 kernels
-    polynomial p1(0.1, 0.002, 0.003, 0.4, 0.5, 0.6,  0.0007, 0.0008, 0.0009, 0.00011);
-    polynomial p2(1.1, 1.002, 1.003, 1.4, 1.5, 1.6,  1.0007, 1.0008, 1.0009, 1.00011);
-    polynomial p3(2.1, 2.002, 2.003, 2.4, 2.5, 2.6,  2.0007, 2.0008, 2.0009, 2.00011);
-    polynomial p4(3.1, 3.002, 3.003, 3.4, 3.5, 3.6,  3.0007, 3.0008, 3.0009, 3.00011);
-    polynomial p5(4.1, 4.002, 4.003, 4.4, 4.5, 4.6,  4.0007, 4.0008, 4.0009, 4.00011);
-    polynomial1(x, y) = p1(x, y);
-    polynomial2(x, y) = p2(x, y);
-    polynomial3(x, y) = p3(x, y);
-    polynomial4(x, y) = p4(x, y);
-    polynomial5(x, y) = p5(x, y);
-
-    //5 Kernels that will be weighted by their corresponding polynomials to produce
-    //the total kernel
-    //Kernel #1
-    gaussian2D k1(2, 2, 0);
-    kernel1(i, j) = k1(i, j);
-
-    //Kernel #2
-    gaussian2D k2(.5, 4, 0);
-    kernel2(i, j) = k2(i, j);
-
-    //Kernel #3
-    gaussian2D k3(.5, 4, M_PI/4);
-    kernel3(i, j) = k3(i, j);
-
-    //Kernel #4
-    gaussian2D k4(.5, 4, M_PI/2);
-    kernel4(i, j) = k4(i, j);
-
-    //Kernel #5
-    gaussian2D k5(4, 4, 0);
-    kernel5(i, j) = k5(i, j);
-
-    //Compute output image plane
-    image_bounded = BoundaryConditions::repeat_edge(image);    
-    Expr blur_image_help = 0.0f;
-    Expr norm = 0.0f;
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            blur_image_help += image_bounded(x + i, y + j) * (polynomial1(x, y)*kernel1(i, j) +
-                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
-                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j)); 
-            norm += (polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
-                polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
-                polynomial5(x, y)*kernel5(i, j));
-        }
-    }
-    blur_image_help = blur_image_help/norm;
-
-    //Compute output variance plane
-    variance_bounded = BoundaryConditions::repeat_edge(variance);
-    Expr blur_variance_help = 0.0f;
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            blur_variance_help += variance_bounded(x + i, y + j) * (polynomial1(x, y)*kernel1(i, j) +
-                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
-                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j))
-                *(polynomial1(x, y)*kernel1(i, j) +
-                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
-                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j)); 
-        }
-    }
-    blur_variance_help = blur_variance_help/(norm*norm);
-
-    //Compute output mask plane
-    mask_bounded = BoundaryConditions::repeat_edge(mask);    
-    Expr blur_mask_help = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            blur_mask_help = select((polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
-                polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
-                polynomial5(x, y)*kernel5(i, j)) == 0.0f, blur_mask_help, blur_mask_help | mask_bounded(x + i, y + j));
-//            blur_mask_help = blur_mask_help | mask_bounded(x + i, y + j);    
-        }
-    }
-
-    //Evaluate image, mask, and variance planes concurrently using a tuple
-    if(useTuples){
-        combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, blur_mask_help);
-    }
-    else{
-        image_output(x, y) = blur_image_help;
-        variance_output(x, y) = blur_variance_help;
-        mask_output(x, y) = blur_mask_help;
-    }
-*/
-
 }
 
 //save fits image (does nothing if STANDALONE defined)
@@ -659,77 +531,139 @@ void generalKernel::debug(){
 //    combined_output.compile_to_lowered_stmt("generalKernelBlurImage.html", {image}, HTML);
 }
 
-void generalKernel::test_correctness(Image<float> reference_output) {
-/*    Image<float> image_output(image.width(), image.height());
-    image_output.realize(image_output);
+void generalKernel::test_correctness(string referenceLocation, int details) {
+#ifndef STANDALONE //do nothing when STANDALONE is defined
+    //load reference image, variance, and mask planes
+    auto im = afwImage::MaskedImage<float>(referenceLocation);
+    int width = im.getWidth(), height = im.getHeight();
 
+    Image<float> reference_image(width, height);
+    Image<float> reference_variance(width, height);
+    Image<uint16_t> reference_mask(width, height);
 
-    // Check against the reference output.
-    for (int y = 0; y < image.height(); y++) {
-        for (int x = 0; x < image.width(); x++) {
-            if (image_output(x, y) != reference_output(x, y)) {
-                printf("Mismatch between output (%f) and "
-                       "reference output (%f) at %d, %d\n",
-                       image_output(x, y),
-                       reference_output(x, y),
-                       x, y);
-                exit(0);
-            }
+    //Read image in
+    for (int y = 0; y < height; y++) {
+        afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = im.x_at(0, y);
+        for (int x = 0; x < width; x++){
+            reference_image(x, y) = (*inPtr).image();
+            reference_variance(x, y) = (*inPtr).variance();
+            reference_mask(x, y) = (*inPtr).mask();
+            inPtr++;
         }
     }
-    cout << "done checking correctness" << endl;
-*/
+
+    //compute the maximum differences of the input images' image, mask, and variance values
+    //write an output image whose values are reference_image-image_output_cpu 
+    double maxImageDiff = 0;
+    double maxImageDiffPercent = 0;
+    double valueAtMaxImageDiff = 0;
+    double varianceAtMaxImgDiff = 0;
+    int imageX = -1;
+    int imageY = -1;
+
+    double maxVarianceDiff = 0;
+    double maxVarianceDiffPercent = 0;
+    double valueAtMaxVarianceDiff1 = 0;
+    double valueAtMaxVarianceDiff2 = 0;
+    int varianceX = -1;
+    int varianceY = -1;
+
+    int maxMaskDiff = 0;
+    int maskX = -1;
+    int maskY = -1;
+    int reference_maskVal = -1;
+    int mask_output_cpuVal = -1;
+
+    float maxImage1 = 0;
+    float maxVariance1 = 0;
+    int maxMask1 = 0;
+
+    float maxImage2 = 0;
+    float maxVariance2 = 0;
+    int maxMask2 = 0;
+
+
+    auto imDiff = afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>(width, height);
+    for (int y = bounding_box; y < imDiff.getHeight()-bounding_box; y++) {
+        afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>::x_iterator inPtr = imDiff.x_at(0, y);
+
+        for (int x = bounding_box; x < imDiff.getWidth()-bounding_box; x++){
+//            afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel(reference_image(x, y) - image_output_cpu(x, y), reference_variance(x, y) - variance_output_cpu(x, y), reference_mask(x, y) - mask_output_cpu(x, y));
+            afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel((reference_image(x, y) - image_output_cpu(x, y))/reference_variance(x, y), reference_variance(x, y) - variance_output_cpu(x, y), reference_mask(x, y) - mask_output_cpu(x, y));
+            (*inPtr) = curPixel;
+            inPtr++;
+//            if(abs(reference_image(x, y) - image_output_cpu(x, y))/min(abs(reference_image(x, y)), abs(image_output_cpu(x, y))) > maxImageDiffPercent){
+            if((abs(reference_image(x, y) - image_output_cpu(x, y))/min(abs(reference_image(x, y)), abs(image_output_cpu(x, y)))) > maxImageDiff){
+                maxImageDiffPercent = abs(reference_image(x, y) - image_output_cpu(x, y))/min(abs(reference_image(x, y)), abs(image_output_cpu(x, y)));
+                maxImageDiff = abs(reference_image(x, y) - image_output_cpu(x, y));
+                valueAtMaxImageDiff = min(abs(reference_image(x, y)), abs(image_output_cpu(x, y)));
+                varianceAtMaxImgDiff = min(abs(reference_variance(x, y)), abs(variance_output_cpu(x, y)));
+                imageX = x;
+                imageY = y;
+            }
+            if(abs(reference_variance(x, y) - variance_output_cpu(x, y))/min(abs(reference_variance(x, y)), abs(variance_output_cpu(x, y))) > maxVarianceDiff){
+                maxVarianceDiffPercent = abs(reference_variance(x, y) - variance_output_cpu(x, y))/min(abs(reference_variance(x, y)), abs(variance_output_cpu(x, y)));
+                maxVarianceDiff = abs(reference_variance(x, y) - variance_output_cpu(x, y));
+                valueAtMaxVarianceDiff1 = reference_variance(x, y);
+                valueAtMaxVarianceDiff2 = variance_output_cpu(x, y);
+                varianceX = x;
+                varianceY = y;
+            }
+            if(abs(reference_mask(x, y) - mask_output_cpu(x, y)) > maxMaskDiff){
+                maxMaskDiff = abs(reference_mask(x, y) - mask_output_cpu(x, y));
+                maskX = x;
+                maskY = y;
+                reference_maskVal = reference_mask(x, y);
+                mask_output_cpuVal = mask_output_cpu(x, y);
+            }
+
+            if(abs(reference_image(x, y)) > maxImage1)
+                maxImage1 = abs(reference_image(x, y));
+            if(abs(reference_variance(x, y)) > maxVariance1)
+                maxVariance1 = abs(reference_variance(x, y));
+            if(reference_mask(x, y) > maxMask1)
+                maxMask1 = reference_mask(x, y);
+
+            if(abs(image_output_cpu(x, y)) > maxImage2)
+                maxImage2 = abs(image_output_cpu(x, y));
+            if(abs(variance_output_cpu(x, y)) > maxVariance2)
+                maxVariance2 = abs(variance_output_cpu(x, y));
+            if(mask_output_cpu(x, y) > maxMask2)
+                maxMask2 = mask_output_cpu(x, y);
+        }
+    }
+
+    if(details == 0){
+        cout << "Max (image difference)/(smaller of two image value) = " << maxImageDiffPercent << endl;
+        cout << "Max (variance difference)/(smaller of two variance value) = " << maxVarianceDiffPercent << endl;
+        cout << "Max mask difference = " << maxMaskDiff << endl;
+    }
+    else if(details ==1){
+        cout << "Max (image difference)/(min img value) = " << maxImageDiffPercent << ",  Max image difference = " << maxImageDiff
+        << ", value at max image difference = " << valueAtMaxImageDiff << " at position: (" << imageX << ", " << imageY
+        << "), " << "variance at max difference = " << varianceAtMaxImgDiff << endl;
+
+        cout << "Max (variance difference)/(min var value) = " << maxVarianceDiffPercent << ",  Max Variance difference = " << maxVarianceDiff
+        << ", reference_variance at max Variance difference = " << valueAtMaxVarianceDiff1 << ", variance_output_cpu at max Variance difference = "
+        << valueAtMaxVarianceDiff2 <<" at position: (" << varianceX << ", ";
+        cout << varianceY << ")" << endl;
+
+        cout << "Max mask difference = " << maxMaskDiff << " at position: (" << maskX << ", " << maskY << ")" << 
+        ", img1 mask = " << reference_maskVal << ", img2 mask = " << mask_output_cpuVal << endl;
+
+        cout << "Max reference_image = " << maxImage1 << ", max reference_variance = " << maxVariance1 << 
+        ", max reference_mask = " << maxMask1 << endl;
+
+        cout << "Max image_output_cpu = " << maxImage2 << ", max variance_output_cpu = " << maxVariance2 << 
+        ", max mask_output_cpu = " << maxMask2 << endl; 
+    }   
+#endif
 }
 
 int main(int argc, char *argv[]) {
-//    convolveKernelsSeparatelyThenCombinePipeline p0(image, variance, mask, false);
-//    cout << "convolveKernelsSeparatelyThenCombinePipeline On GPU without tuples: " << endl;
-//    p0.schedule_for_gpu();
-//    p0.test_performance_gpu();
-
-/*    generalKernel p1(image, variance, mask, true);
-    cout << "On CPU with tuples: " << endl;
-    p1.schedule_for_cpu();
-    p1.test_performance_cpu();
-
-    generalKernel p2(image, variance, mask, true);
-    cout << "On GPU with tuples: " << endl;
-    p2.schedule_for_gpu();
-    p2.test_performance_gpu();
-
-    generalKernelWithoutTuples p3(image, variance, mask, false);
-    cout << "On CPU without tuples: " << endl;
-    p3.schedule_for_cpu();
-    p3.test_performance_cpu();
-
-//    generalKernel p4(image, variance, mask, false);
-//    cout << "On GPU without tuples: " << endl;
-//    p4.schedule_for_gpu();
-//    p4.test_performance_gpu();
-
-    //Check GPU:
-    //Allocate an image that will store the correct image plane output 
-    //calculated on CPU
-    Image<float> reference_output_image(image.width(), image.height());
-    p3.image_output.realize(reference_output_image);
-    //check it matches GPU calculation
-//    p4.test_correctness(reference_output_image);
 
 
-    //calculate variance/mask planes for writing out image
-    Image<float> reference_output_variance(image.width(), image.height());
-    Image<uint16_t> reference_output_mask(image.width(), image.height());
-    p3.variance_output.realize(reference_output_variance);
-    p3.mask_output.realize(reference_output_mask);
-
-//    p1.schedule_for_gpu();
-//    p1.test_performance_gpu();
-
-//    p1.debug(); 
-*/
-
-
-
+    //test a linear combination of 5 spatially invariant gaussians
     std::vector<polynomial> weights;
     for(int i = 1; i < 6; i++){
         polynomial curPol = polynomial(0.1f, 0.001f, 0.001f, 0.000001f, 0.000001f, 0.000001f,
@@ -753,15 +687,12 @@ int main(int argc, char *argv[]) {
     kernels[3] = &k4;
     kernels[4] = &k5;
 
-//    gaussian2D k1(2, 2, 0), k2(.5, 4, 0), k3(.5, 4, M_PI/4), k4(.5, 4, M_PI/2), k5(4, 4, 0);
-
     //create 5x5 kernel with 
     generalKernelWithTuples p1("./images/calexp-004207-g3-0123.fits", 5);
     p1.createLinearCombinationProgram(weights, kernels);
-//    p1.createLinearCombinationProgram_POOR_NORMALIZATION_FAST(weights, kernels);
-//    p1.createLinearCombinationProgram(weights, kernels);
     p1.schedule_for_cpu();
     p1.test_performance_cpu();
+    p1.test_correctness("./lsstLinearCombination5x5.fits", 0);
 
  //   cout << "Kernel size = " << (bounding_box*2 + 1) << " x " << (bounding_box*2 + 1) <<endl;
 
