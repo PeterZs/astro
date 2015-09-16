@@ -221,7 +221,7 @@ void generalKernel::save_fits_image(string imageDestination){
 //The total linear combination of all basis kernels is normalized.
 //Individual kernel normalization can be controlled using the polynomial coefficients.
 void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
+    std::vector<kernel2D *> kernels){
 
     if(weights.size() != kernels.size()){
         cout << "ERROR, must supply equal number of weights and kernels" << endl;
@@ -239,8 +239,8 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
         for(int j = -bounding_box; j <= bounding_box; j++){
             cur_kernel_location = 0.0f;
             for(int h = 0; h < kernels.size(); h++){
-                cur_kernel_location += weights[h]()*kernels[h](i, j);
-                norm += weights[h]()*kernels[h](i, j);
+                cur_kernel_location += weights[h]()*(*kernels[h])(i, j);
+                norm += weights[h]()*(*kernels[h])(i, j);
             }
             blur_image_help += image_bounded(x + i, y + j) * cur_kernel_location;
             blur_variance_help += variance_bounded(x + i, y + j) 
@@ -300,7 +300,7 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
 }
 
 void generalKernelWithTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
+    std::vector<kernel2D *> kernels){
         generalKernel::createLinearCombinationProgram(weights, kernels);
         combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
 }
@@ -308,7 +308,7 @@ void generalKernelWithTuples::createLinearCombinationProgram(std::vector<polynom
 
 
 void generalKernelWithoutTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
-    std::vector<gaussian2D> kernels){
+    std::vector<kernel2D *> kernels){
         generalKernel::createLinearCombinationProgram(weights, kernels);
 
         image_output(x, y) = total_image_output;
@@ -739,13 +739,19 @@ int main(int argc, char *argv[]) {
         weights.push_back(curPol);
     }
 
-    std::vector<gaussian2D> kernels;
+    std::vector<kernel2D *> kernels;
     kernels.resize(5);
-    kernels[0] = gaussian2D(2.0f, 2.0f, 0.0f);
-    kernels[1] = gaussian2D(.5f, 4.0f, 0.0f);
-    kernels[2] = gaussian2D(.5f, 4.0f, M_PI/4.0f);
-    kernels[3] = gaussian2D(.5f, 4.0f, M_PI/2.0f);
-    kernels[4] = gaussian2D(4.0f, 4.0f, 0.0f);
+    gaussian2D k1 = gaussian2D(2.0f, 2.0f, 0.0f);
+    gaussian2D k2 = gaussian2D(.5f, 4.0f, 0.0f);
+    gaussian2D k3 = gaussian2D(.5f, 4.0f, M_PI/4.0f);
+    gaussian2D k4 = gaussian2D(.5f, 4.0f, M_PI/2.0f);
+    gaussian2D k5 = gaussian2D(4.0f, 4.0f, 0.0f);
+
+    kernels[0] = &k1; 
+    kernels[1] = &k2;
+    kernels[2] = &k3;
+    kernels[3] = &k4;
+    kernels[4] = &k5;
 
 //    gaussian2D k1(2, 2, 0), k2(.5, 4, 0), k3(.5, 4, M_PI/4), k4(.5, 4, M_PI/2), k5(4, 4, 0);
 

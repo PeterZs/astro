@@ -73,19 +73,21 @@ Halide::Expr getHalidePolynomial(vector<float> coefficients){
     coefficients[8]*x*y*y + coefficients[9]*y*y*y);
 }
 
+//Abstract base class for 2 dimensional kernels
+class kernel2D{
+public:
+    virtual Halide::Expr operator()(int i, int j) = 0;
+};
 
 //Represents a 2 dimensional gaussian with standard deviations sigmaI and sigmaJ in its
 //i and j dimensions respectively.  The guassian's i, j coordinate system is rotated by theta 
 //radians with respect to the image's x, y coordinate system.
 //The guassian is not normalized.
-class gaussian2D{
+class gaussian2D: public kernel2D{
 public:
     gaussian2D(float sigmaI_, float sigmaJ_, float theta_)
         : sigmaI(sigmaI_), sigmaJ(sigmaJ_), theta(theta_){}
 
-    gaussian2D(){} //empty constructor for use by child
-
-//    Halide::Expr operator()(Halide::Var x, Halide::Var y){
     Halide::Expr operator()(int i, int j){
         return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
                     /(2*sigmaI*sigmaI))
@@ -103,14 +105,13 @@ private:
 //guassian's i, j coordinate system is rotated by spatialTheta(x, y) (a polynomial) radians 
 //with respect to the image's x, y coordinate system.
 //The guassian is not normalized.
-class spatiallyVaryingGaussian2D: public gaussian2D{
+class spatiallyVaryingGaussian2D: public kernel2D{
 public:
     spatiallyVaryingGaussian2D(polynomial spatialSigmaI_, polynomial spatialSigmaJ_, 
         polynomial spatialTheta_)
             : spatialSigmaI(spatialSigmaI_), spatialSigmaJ(spatialSigmaJ_)
             , spatialTheta(spatialTheta_){}
 
-//    Halide::Expr operator()(Halide::Var x, Halide::Var y, Halide::Var i, Halide::Var j){
     Halide::Expr operator()(int i, int j){
         return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
                     (i*cos(spatialTheta()) + j*sin(spatialTheta()))) / 
@@ -124,14 +125,18 @@ private:
     polynomial spatialSigmaI, spatialSigmaJ, spatialTheta;
 };
 
+//Abstract base class for 1 dimensional kernels
+class kernel1D{
+public:
+    virtual Halide::Expr operator()(int i) = 0;
+};
+
 //Represents a 1 dimensional gaussian with standard deviation sigma.
 //The guassian is not normalized.
-class gaussian1D{
+class gaussian1D:public kernel1D{
 public:
     gaussian1D(float sigma_): sigma(sigma_) {}
-    gaussian1D(){} //empty constructor for use by child
 
-//    Halide::Expr operator()(Halide::Var i){
     Halide::Expr operator()(int i){
         return exp(-(i*i)/(2*sigma*sigma));
     }
@@ -141,11 +146,10 @@ private:
 
 //A 1 dimensional gaussian whose standard deviation is represented by the
 //spatially varying polynomial spatialSigma(x, y)
-class spatiallyVaryingGaussian1D : public gaussian1D{
+class spatiallyVaryingGaussian1D : public kernel1D{
 public:
     spatiallyVaryingGaussian1D(polynomial spatialSigma_): spatialSigma(spatialSigma_) {}
 
-//    Halide::Expr operator()(Halide::Var x, Halide::Var y, Halide::Var i){
     Halide::Expr operator()(int i){
         return exp(-(i*i)/(2*spatialSigma()*spatialSigma()));
     }
@@ -189,7 +193,7 @@ public:
     //Functions to create specific types of kernels
 
     virtual void createLinearCombinationProgram(
-        vector<polynomial> weights, vector<gaussian2D> kernels) = 0;
+        vector<polynomial> weights, vector<kernel2D *> kernels) = 0;
 
     //Save .fits images using the LSST stack
     //Before running, load the LSST stack using
@@ -229,11 +233,11 @@ public:
     generalKernelWithTuples(string imageLocation, int kernelSize)
         : generalKernel(imageLocation, kernelSize){}
 
-    void createLinearCombinationProgram(vector<polynomial> weights, vector<gaussian2D> kernels);
+    void createLinearCombinationProgram(vector<polynomial> weights, vector<kernel2D *> kernels);
 
     void schedule_for_cpu();
     void schedule_for_gpu();
-//
+
     void test_performance_cpu();
     void test_performance_gpu();
 
@@ -248,11 +252,11 @@ public:
     generalKernelWithoutTuples(string imageLocation, int kernelSize)
         : generalKernel(imageLocation, kernelSize){}
 
-    void createLinearCombinationProgram(vector<polynomial> weights, vector<gaussian2D> kernels);
+    void createLinearCombinationProgram(vector<polynomial> weights, vector<kernel2D *> kernels);
 
     void schedule_for_cpu();
     void schedule_for_gpu();
-//
+
     void test_performance_cpu();
     void test_performance_gpu();
 
