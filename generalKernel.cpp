@@ -34,6 +34,7 @@ generalKernel::generalKernel(string imageLocation, int kernelSize) {
 
         //initialize image, variance and mask planes to correct size
         printf("Loaded: %d x %d\n", width, height);
+        printf("Kernel size %d x %d\n", kernelSize, kernelSize);
         Image<float> image_(width, height);
         Image<float> variance_(width, height);
         Image<uint16_t> mask_(width, height);
@@ -89,7 +90,7 @@ void generalKernel::save_fits_image(string imageDestination){
 }
 
 
-//Kernels are not required to be normalized, but are not individually normalized.
+//Kernels are not required to be normalized, but are not individually normalized here.
 //The total linear combination of all basis kernels is normalized.
 //Individual kernel normalization can be controlled using the polynomial coefficients.
 void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weights,
@@ -118,9 +119,13 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
             blur_variance_help += variance_bounded(x + i, y + j) 
                                     * cur_kernel_location * cur_kernel_location;
 
-            total_mask_output = select(cur_kernel_location == 0.0f, total_mask_output,
-                                total_mask_output | mask_bounded(x + i, y + j));
-//            total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
+            if(!OR_ALL_MASK_PIXELS){
+                total_mask_output = select(cur_kernel_location == 0.0f, total_mask_output,
+                                    total_mask_output | mask_bounded(x + i, y + j));
+            }  
+            else{ 
+                total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
+            }  
         }
     }
     total_image_output = blur_image_help/norm;
@@ -171,13 +176,274 @@ void generalKernel::createLinearCombinationProgram(std::vector<polynomial> weigh
 */
 }
 
+
+//Kernels are not required to be normalized, but are not individually normalized here.
+//The total linear combination of all basis kernels is normalized at each point of the 
+//original kernel evaluation, before interpolation.
+//Individual kernel normalization can be controlled using the polynomial coefficients.
+//2 dimensional linear interpolation is performed on the original kernel using a grid
+//of size (interpDist x interpDist).
+void generalKernel::createLinearCombinationProgramWithInterpolation(std::vector<polynomial> weights,
+    std::vector<kernel2D *> kernels, int interpDist){
+
+    if(weights.size() != kernels.size()){
+        cout << "ERROR, must supply equal number of weights and kernels" << endl;
+        return;
+    }
+
+    //Condensed version generalized for any number of kernels/weights
+    Expr blur_image_help = 0.0f;
+    Expr blur_variance_help = 0.0f;
+    Expr norm = 0.0f;
+    Expr cur_kernel_location = 0.0f;
+    total_mask_output = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
+
+    //The original linear combination kernel function, normalized after linear combination.
+/*    Func normalizedTotalKernel;
+    normalizedTotalKernel(x, y, i, j) = 0.0f;
+    for(int i = -bounding_box; i <= bounding_box; i++){
+        for(int j = -bounding_box; j <= bounding_box; j++){
+            cur_kernel_location = 0.0f;
+            for(int h = 0; h < kernels.size(); h++){
+                cur_kernel_location += weights[h]()*(*kernels[h])(i, j);
+                norm += weights[h]()*(*kernels[h])(i, j);
+            }
+            normalizedTotalKernel(x, y, i, j) = cur_kernel_location;
+        }
+    }
+*/
+
+    Func normalizedTotalKernel;
+
+    for(int i = -bounding_box; i <= bounding_box; i++){
+        for(int j = -bounding_box; j <= bounding_box; j++){
+            for(int h = 0; h < kernels.size(); h++){
+                norm += weights[h]()*(*kernels[h])(i, j);
+            }
+        }
+    }
+
+    Expr linear_combo_kernel = 0.0f;
+    for(int h = 0; h < kernels.size(); h++){
+        linear_combo_kernel += weights[h]()*(*kernels[h])();
+    }
+    normalizedTotalKernel(x, y, i, j) = linear_combo_kernel/norm;
+
+
+
+
+
+    //This is a compressed version of the original kernel that can be evaluated
+    //compute_root() without computing the kernel at points that will not
+    //actually be used for interpolation.
+    compressedKernel(x, y, i, j) = normalizedTotalKernel(x*interpDist, y*interpDist, i, j);
+
+
+    //Do the actual interpolation now
+
+//******************************Without the compressed kernel
+/*    Func interpKernel;
+    Expr xS = x%interpDist;
+    Expr xG = interpDist - xS;
+    Expr yS = y%interpDist;
+    Expr yG = interpDist - yS;
+
+    Expr xInterpS = ((xG * normalizedTotalKernel(x - xS, y - yS, i, j)) + (xS * normalizedTotalKernel(x + xG, y - yS, i, j)))/interpDist;
+    Expr xInterpG = ((xG * normalizedTotalKernel(x - xS, y + yG, i, j)) + (xS * normalizedTotalKernel(x + xG, y + yG, i, j)))/interpDist;
+
+    interpKernel(x, y, i, j) = ((yG * xInterpS) + (yS * xInterpG))/interpDist;
+*/
+//******************************DONE Without the compressed kernel
+
+
+//******************************With the compressed kernel
+    Func interpKernel;
+    Expr xS = x%interpDist;
+    Expr xG = interpDist - xS;
+    Expr yS = y%interpDist;
+    Expr yG = interpDist - yS;
+
+    Expr xInterpS = ((xG * compressedKernel((x - xS)/interpDist, (y - yS)/interpDist, i, j)) +
+                     (xS * compressedKernel((x + xG)/interpDist, (y - yS)/interpDist, i, j))) / interpDist;
+
+    Expr xInterpG = ((xG * compressedKernel((x - xS)/interpDist, (y + yG)/interpDist, i, j)) +
+                     (xS * compressedKernel((x + xG)/interpDist, (y + yG)/interpDist, i, j))) / interpDist;
+
+    interpKernel(x, y, i, j) = ((yG * xInterpS) + (yS * xInterpG))/interpDist;
+//******************************DONE With the compressed kernel
+
+    //perform convolution with the interpolated kernel
+    total_image_output = 0.0f;
+    total_variance_output = 0.0f;
+    total_mask_output = cast<uint16_t>(0);
+    for(int i = -bounding_box; i <= bounding_box; i++){
+        for(int j = -bounding_box; j <= bounding_box; j++){
+            total_image_output += image_bounded(x + i, y + j)*interpKernel(x, y, i, j);
+            total_variance_output += variance_bounded(x + i, y + j)*interpKernel(x, y, i, j)
+                                    *interpKernel(x, y, i, j);
+
+            if(!OR_ALL_MASK_PIXELS){
+                total_mask_output = select(interpKernel(x, y, i, j) == 0.0f, total_mask_output,
+                                    total_mask_output | mask_bounded(x + i, y + j));
+            }  
+            else{ 
+                total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
+            } 
+        }
+    }
+
+}
+
+//Kernels are not required to be normalized, but are not individually normalized here.
+//The total linear combination of all basis kernels is normalized at each point of the 
+//original kernel evaluation, before interpolation.
+//Individual kernel normalization can be controlled using the polynomial coefficients.
+//2 dimensional linear interpolation is performed on the original kernel using a grid
+//of size (interpDist x interpDist).
+void generalKernel::createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(std::vector<polynomial> weights,
+    std::vector<kernel2D *> kernels, int interpDist){
+
+    if(weights.size() != kernels.size()){
+        cout << "ERROR, must supply equal number of weights and kernels" << endl;
+        return;
+    }
+
+    //Condensed version generalized for any number of kernels/weights
+    Expr blur_image_help = 0.0f;
+    Expr blur_variance_help = 0.0f;
+    Expr cur_kernel_location = 0.0f;
+    total_mask_output = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
+
+    //The original linear combination kernel function, normalized after linear combination.
+/*    Func normalizedTotalKernel;
+    normalizedTotalKernel(x, y, i, j) = 0.0f;
+    for(int i = -bounding_box; i <= bounding_box; i++){
+        for(int j = -bounding_box; j <= bounding_box; j++){
+            cur_kernel_location = 0.0f;
+            for(int h = 0; h < kernels.size(); h++){
+                cur_kernel_location += weights[h]()*(*kernels[h])(i, j);
+                norm += weights[h]()*(*kernels[h])(i, j);
+            }
+            normalizedTotalKernel(x, y, i, j) = cur_kernel_location;
+        }
+    }
+*/
+
+    Func kernel;
+
+
+    Expr linear_combo_kernel = 0.0f;
+    for(int h = 0; h < kernels.size(); h++){
+        linear_combo_kernel += weights[h]()*(*kernels[h])();
+    }
+    kernel(x, y, i, j) = linear_combo_kernel;
+
+
+
+
+
+    //This is a compressed version of the original kernel that can be evaluated
+    //compute_root() without computing the kernel at points that will not
+    //actually be used for interpolation.
+    compressedKernel(x, y, i, j) = kernel(x*interpDist, y*interpDist, i, j);
+
+
+    //Do the actual interpolation now
+
+//******************************Without the compressed kernel
+/*    Func interpKernel;
+    Expr xS = x%interpDist;
+    Expr xG = interpDist - xS;
+    Expr yS = y%interpDist;
+    Expr yG = interpDist - yS;
+
+    Expr xInterpS = ((xG * normalizedTotalKernel(x - xS, y - yS, i, j)) + (xS * normalizedTotalKernel(x + xG, y - yS, i, j)))/interpDist;
+    Expr xInterpG = ((xG * normalizedTotalKernel(x - xS, y + yG, i, j)) + (xS * normalizedTotalKernel(x + xG, y + yG, i, j)))/interpDist;
+
+    interpKernel(x, y, i, j) = ((yG * xInterpS) + (yS * xInterpG))/interpDist;
+*/
+//******************************DONE Without the compressed kernel
+
+
+//******************************With the compressed kernel
+    Func interpKernel;
+    Expr xS = x%interpDist;
+    Expr xG = interpDist - xS;
+    Expr yS = y%interpDist;
+    Expr yG = interpDist - yS;
+
+    Expr xInterpS = ((xG * compressedKernel((x - xS)/interpDist, (y - yS)/interpDist, i, j)) +
+                     (xS * compressedKernel((x + xG)/interpDist, (y - yS)/interpDist, i, j))) / interpDist;
+
+    Expr xInterpG = ((xG * compressedKernel((x - xS)/interpDist, (y + yG)/interpDist, i, j)) +
+                     (xS * compressedKernel((x + xG)/interpDist, (y + yG)/interpDist, i, j))) / interpDist;
+
+    interpKernel(x, y, i, j) = ((yG * xInterpS) + (yS * xInterpG))/interpDist;
+//******************************DONE With the compressed kernel
+
+    //perform convolution with the interpolated kernel
+    total_image_output = 0.0f;
+    total_variance_output = 0.0f;
+    total_mask_output = cast<uint16_t>(0);
+    Expr norm = 0.0f;
+    for(int i = -bounding_box; i <= bounding_box; i++){
+        for(int j = -bounding_box; j <= bounding_box; j++){
+            total_image_output += image_bounded(x + i, y + j)*interpKernel(x, y, i, j);
+            total_variance_output += variance_bounded(x + i, y + j)*interpKernel(x, y, i, j)
+                                    *interpKernel(x, y, i, j);
+            if(!OR_ALL_MASK_PIXELS){
+                total_mask_output = select(interpKernel(x, y, i, j) == 0.0f, total_mask_output,
+                                    total_mask_output | mask_bounded(x + i, y + j));
+            }  
+            else{ 
+                total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
+            } 
+            norm += interpKernel(x, y, i, j);
+        }
+    }
+    total_image_output = total_image_output/norm;
+    total_variance_output = total_variance_output/(norm*norm);
+
+}
+
+
+void generalKernelWithTuples::createLinearCombinationProgramWithInterpolation(std::vector<polynomial> weights,
+    std::vector<kernel2D *> kernels, int interpDist){
+        generalKernel::createLinearCombinationProgramWithInterpolation(weights, kernels, interpDist);
+        combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
+}
+
+void generalKernelWithTuples::createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(std::vector<polynomial> weights,
+    std::vector<kernel2D *> kernels, int interpDist){
+        generalKernel::createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(weights, kernels, interpDist);
+        combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
+}
+
+void generalKernelWithoutTuples::createLinearCombinationProgramWithInterpolation(std::vector<polynomial> weights,
+    std::vector<kernel2D *> kernels, int interpDist){
+        generalKernel::createLinearCombinationProgramWithInterpolation(weights, kernels, interpDist);
+
+        image_output(x, y) = total_image_output;
+        variance_output(x, y) = total_variance_output;
+        mask_output(x, y) = total_mask_output;
+}
+
+void generalKernelWithoutTuples::createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(std::vector<polynomial> weights,
+    std::vector<kernel2D *> kernels, int interpDist){
+        generalKernel::createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(weights, kernels, interpDist);
+
+        image_output(x, y) = total_image_output;
+        variance_output(x, y) = total_variance_output;
+        mask_output(x, y) = total_mask_output;
+}
+
+
+
 void generalKernelWithTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
     std::vector<kernel2D *> kernels){
         generalKernel::createLinearCombinationProgram(weights, kernels);
         combined_output(x, y) = Tuple(total_image_output, total_variance_output, total_mask_output);
 }
-
-
 
 void generalKernelWithoutTuples::createLinearCombinationProgram(std::vector<polynomial> weights,
     std::vector<kernel2D *> kernels){
@@ -198,6 +464,17 @@ void generalKernelWithTuples::schedule_for_cpu() {
     combined_output.vectorize(x, 16);  
 }
 
+void generalKernelWithTuples::schedule_interpolation_for_cpu() {
+    // Split the y coordinate of the consumer into strips of 4 scanlines:
+    combined_output.split(y, y_0, yi, 32);
+    // Compute the strips using a thread pool and a task queue.
+    combined_output.parallel(y_0);
+    // Vectorize across x by a factor of four.
+    combined_output.vectorize(x, 16);  
+
+    compressedKernel.compute_root();
+}
+
 void generalKernelWithoutTuples::schedule_for_cpu() {
     image_output.split(y, y_0, yi, 32);
     image_output.parallel(y_0);
@@ -210,6 +487,23 @@ void generalKernelWithoutTuples::schedule_for_cpu() {
     mask_output.split(y, y_0, yi, 32);
     mask_output.parallel(y_0);
     mask_output.vectorize(x, 16);  
+}
+
+void generalKernelWithoutTuples::schedule_interpolation_for_cpu() {
+    image_output.split(y, y_0, yi, 10);
+    image_output.parallel(y_0);
+    image_output.vectorize(x, 8);
+
+    variance_output.split(y, y_0, yi, 10);
+    variance_output.parallel(y_0);
+    variance_output.vectorize(x, 8);
+
+    mask_output.split(y, y_0, yi, 10);
+    mask_output.parallel(y_0);
+    mask_output.vectorize(x, 8);  
+
+    compressedKernel.compute_root();
+
 }
 
 void generalKernelWithTuples::schedule_for_gpu() {
@@ -339,11 +633,9 @@ void generalKernelWithTuples::test_performance_cpu() {
         }
     }
     average = average/NUMBER_OF_RUNS;
-    std::cout << "Average Time: " << average << ", Min = " <<
+    std::cout << "Using tuples, average Time: " << average << ", Min = " <<
     min << ", Max = " << max << ", with " << NUMBER_OF_RUNS <<
     " runs" << '\n';
-    cout << "For fastest run total time = " << min << ", imgTime = " << imgTime << ", varTime = " << varTime << 
-    "maskTime = " << maskTime << endl;   
 }
 
 
@@ -523,9 +815,9 @@ void generalKernelWithoutTuples::test_performance_gpu() {
 }
 
 
-
 void generalKernel::debug(){
     //Check out what is happening
+    compressedKernel.trace_realizations();
 //    combined_output.print_loop_nest();
     // Print out pseudocode for the pipeline.
 //    combined_output.compile_to_lowered_stmt("generalKernelBlurImage.html", {image}, HTML);
@@ -583,11 +875,13 @@ void generalKernel::test_correctness(string referenceLocation, int details) {
     int maxMask2 = 0;
 
 
+    int edgeDistance = bounding_box + 1;
+
     auto imDiff = afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>(width, height);
-    for (int y = bounding_box; y < imDiff.getHeight()-bounding_box; y++) {
+    for (int y = edgeDistance; y < imDiff.getHeight()-edgeDistance; y++) {
         afwImage::MaskedImage<float, afwImage::MaskPixel, afwImage::VariancePixel>::x_iterator inPtr = imDiff.x_at(0, y);
 
-        for (int x = bounding_box; x < imDiff.getWidth()-bounding_box; x++){
+        for (int x = edgeDistance; x < imDiff.getWidth()-edgeDistance; x++){
 //            afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel(reference_image(x, y) - image_output_cpu(x, y), reference_variance(x, y) - variance_output_cpu(x, y), reference_mask(x, y) - mask_output_cpu(x, y));
             afwImage::pixel::SinglePixel<float, afwImage::MaskPixel, afwImage::VariancePixel> curPixel((reference_image(x, y) - image_output_cpu(x, y))/reference_variance(x, y), reference_variance(x, y) - variance_output_cpu(x, y), reference_mask(x, y) - mask_output_cpu(x, y));
             (*inPtr) = curPixel;
@@ -634,8 +928,8 @@ void generalKernel::test_correctness(string referenceLocation, int details) {
     }
 
     if(details == 0){
-        cout << "Max (image difference)/(smaller of two image value) = " << maxImageDiffPercent << endl;
-        cout << "Max (variance difference)/(smaller of two variance value) = " << maxVarianceDiffPercent << endl;
+        cout << "Max (image difference)/(smaller of two image values) = " << maxImageDiffPercent << endl;
+        cout << "Max (variance difference)/(smaller of two variance values) = " << maxVarianceDiffPercent << endl;
         cout << "Max mask difference = " << maxMaskDiff << endl;
     }
     else if(details ==1){
@@ -660,208 +954,109 @@ void generalKernel::test_correctness(string referenceLocation, int details) {
 #endif
 }
 
-int main(int argc, char *argv[]) {
 
 
-    //test a linear combination of 5 spatially invariant gaussians
-    std::vector<polynomial> weights;
-    for(int i = 1; i < 6; i++){
-        polynomial curPol = polynomial(0.1f, 0.001f, 0.001f, 0.000001f, 0.000001f, 0.000001f,
-                            0.000000001f, 0.000000001f, 0.000000001f, 0.000000001f);
-//        polynomial curPol = polynomial(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-//                            0.0f, 0.0f, 0.0f, 0.0f);
-        weights.push_back(curPol);
+void checkLinearComboAndAnalytic(){
+    vector<int> kernelSizes;
+    kernelSizes.resize(3);
+    kernelSizes[0] = 5;
+    kernelSizes[1] = 11;
+    kernelSizes[2] = 19;
+
+    for(int ii = 0; ii < kernelSizes.size(); ii++){
+        //test a linear combination of 5 spatially invariant gaussians
+        std::vector<polynomial> weights;
+        for(int i = 1; i < 6; i++){
+            polynomial curPol = polynomial(0.1f, 0.001f, 0.001f, 0.000001f, 0.000001f, 0.000001f,
+                                0.000000001f, 0.000000001f, 0.000000001f, 0.000000001f);
+            weights.push_back(curPol);
+        }
+
+        std::vector<kernel2D *> kernels;
+        kernels.resize(5);
+        gaussian2D k1 = gaussian2D(2.0f, 2.0f, 0.0f);
+        gaussian2D k2 = gaussian2D(.5f, 4.0f, 0.0f);
+        gaussian2D k3 = gaussian2D(.5f, 4.0f, M_PI/4.0f);
+        gaussian2D k4 = gaussian2D(.5f, 4.0f, M_PI/2.0f);
+        gaussian2D k5 = gaussian2D(4.0f, 4.0f, 0.0f);
+
+        kernels[0] = &k1; 
+        kernels[1] = &k2;
+        kernels[2] = &k3;
+        kernels[3] = &k4;
+        kernels[4] = &k5;
+
+        generalKernelWithTuples p1("./images/calexp-004207-g3-0123.fits", kernelSizes[ii]);
+        p1.createLinearCombinationProgram(weights, kernels);
+        p1.schedule_for_cpu();
+        p1.test_performance_cpu();
+
+        std::string curKernelSize = std::to_string(kernelSizes[ii]);
+        p1.test_correctness("./lsstOutput/lsstLinearCombination" + curKernelSize + "x" + curKernelSize +
+            ".fits", 0);
+
+        //test a single analytic kernel
+        cout << "testing analytic kernel" << endl;
+
+        polynomial poly(0.1f, 0.0f, 0.0019476158495634653f, 0.000001f, 0.000001f, 0.000001f,
+                        0.000000001f, 0.000000001f, 0.000000001f, 0.000000001f);
+        spatiallyVaryingGaussian2D analyticKernel(poly, poly, poly);
+        vector<polynomial> weights1;
+        weights1.push_back(polynomial(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f));
+        vector<kernel2D *> singleKernel;
+        singleKernel.push_back(&analyticKernel);
+       
+        generalKernelWithTuples p2("./images/calexp-004207-g3-0123.fits", kernelSizes[ii]);
+        p2.createLinearCombinationProgram(weights1, singleKernel);
+        p2.schedule_for_cpu();
+        p2.test_performance_cpu();
+        p2.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
+            ".fits", 0);
     }
-
-    std::vector<kernel2D *> kernels;
-    kernels.resize(5);
-    gaussian2D k1 = gaussian2D(2.0f, 2.0f, 0.0f);
-    gaussian2D k2 = gaussian2D(.5f, 4.0f, 0.0f);
-    gaussian2D k3 = gaussian2D(.5f, 4.0f, M_PI/4.0f);
-    gaussian2D k4 = gaussian2D(.5f, 4.0f, M_PI/2.0f);
-    gaussian2D k5 = gaussian2D(4.0f, 4.0f, 0.0f);
-
-    kernels[0] = &k1; 
-    kernels[1] = &k2;
-    kernels[2] = &k3;
-    kernels[3] = &k4;
-    kernels[4] = &k5;
-
-    //create 5x5 kernel with 
-    generalKernelWithTuples p1("./images/calexp-004207-g3-0123.fits", 5);
-    p1.createLinearCombinationProgram(weights, kernels);
-    p1.schedule_for_cpu();
-    p1.test_performance_cpu();
-    p1.test_correctness("./lsstLinearCombination5x5.fits", 0);
-
- //   cout << "Kernel size = " << (bounding_box*2 + 1) << " x " << (bounding_box*2 + 1) <<endl;
-
-    //save fits image (does nothing if STANDALONE defined)
-    //save_fits_image("folder1/folder2/imageName") will save image to:
-    //folder1/folder2/imageNameKERNELSIZExKERNELSIZE.fits
-    //e.g. for the case of a 5x5 kernel:
-    //folder1/folder2/imageName5x5.fits
-    p1.save_fits_image("./images/linearCombination/generalKernel");
 
 }
 
 
+void checkInterpolation(){
+    //test a single analytic kernel
+
+    polynomial poly(0.1f, 0.0f, 0.0019476158495634653f, 0.000001f, 0.000001f, 0.000001f,
+                    0.000000001f, 0.000000001f, 0.000000001f, 0.000000001f);
+    spatiallyVaryingGaussian2D analyticKernel(poly, poly, poly);
+    vector<polynomial> weights1;
+    weights1.push_back(polynomial(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f));
+    vector<kernel2D *> singleKernel;
+    singleKernel.push_back(&analyticKernel);
+  
+    cout << "testing linear interpolation of analytic kernel, normalization after interpolation" << endl;
+
+    generalKernelWithoutTuples p1("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
+    p1.createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(weights1, singleKernel, 10); //interpolate 10x10 grid
+    p1.schedule_interpolation_for_cpu();
+    p1.debug();
+    p1.test_performance_cpu();
+
+    std::string curKernelSize = std::to_string(5);
+    p1.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
+        ".fits", 0);
 
 
-//Other polynomials
+    cout << "testing linear interpolation of analytic kernel, normalization before interpolation" << endl;
 
-/*
-    //original LSST example
-    Func polynomial1 ("polynomial1");
-    polynomial1(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
+    generalKernelWithoutTuples p2("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
+    p2.createLinearCombinationProgramWithInterpolation(weights1, singleKernel, 10); //interpolate 10x10 grid
+    p2.schedule_interpolation_for_cpu();
+    p2.debug();
+    p2.test_performance_cpu();
 
-    //for experimenting with optimizations
-    Func polynomial2 ("polynomial2");
-    polynomial2(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial3 ("polynomial3");
-    polynomial3(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial4 ("polynomial4");
-    polynomial4(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial5 ("polynomial5");
-    polynomial5(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-*/
-    //Testing different polynomials
-/*    Func polynomial1 ("polynomial1");
-    polynomial1(x, y) = 1.1f + 2.001f*x + 0.301f*y + 0.00401f*x*x + 0.034501f*x*y
-                     + 0.0023451f*y*y +  0.0234534001f*x*x*x + 0.0234500001f*x*x*y + 5.0300001f*x*y*y
-                     + 0.000123412000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial2 ("polynomial2");
-    polynomial2(x, y) = 05.1f + 0.0401f*x + 0.4031f*y + 03.06401f*x*x + 04.000001f*x*y
-                     + 50.000234001f*y*y +  0.002345340001f*x*x*x + 0.054300001f*x*x*y + 0.03400000001f*x*y*y
-                     + 0.0634543001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial3 ("polynomial3");
-    polynomial3(x, y) = 3.1f + 0.005431f*x + 0.2345001f*y + 0.2345000001f*x*x + 0.532000001f*x*y
-                     + 0.003451f*y*y +  0.0005340001f*x*x*x + 0.023450001f*x*x*y + 235.000000001f*x*y*y
-                     + 345.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial4 ("polynomial4");
-    polynomial4(x, y) = 30.1f + 0.345001f*x + 0.543001f*y + 0.4567f*x*x + 0.2345000001f*x*y
-                     + 0.003453401f*y*y +  0.000657860001f*x*x*x + 0.5342000000001f*x*x*y + 0.2345000000001f*x*y*y
-                     + 0.5234000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial5 ("polynomial5");
-    polynomial5(x, y) = 6.1f + 34.001f*x + 0.543001f*y + 0.34000001f*x*x + 0.534000001f*x*y
-                     + 0.345601f*y*y +  0345.000000001f*x*x*x + 0.053400000001f*x*x*y + 0.0003245000001f*x*y*y
-                     + 0.0006345001f*y*y*y;
-
-*/
+    p2.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
+        ".fits", 0);
+}
 
 
-/*    Func polynomial1 ("polynomial1");
-    polynomial1(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
+int main(int argc, char *argv[]) {
+    checkLinearComboAndAnalytic();
+    checkInterpolation();
 
-    //for experimenting with optimizations
-    Func polynomial2 ("polynomial2");
-    polynomial2(x, y) = 1.1f + 1.001f*x + 1.001f*y + 1.000001f*x*x + 1.000001f*x*y
-                     + 1.000001f*y*y +  1.000000001f*x*x*x + 1.000000001f*x*x*y + 1.000000001f*x*y*y
-                     + 1.000000001f*y*y*y;
+}
 
-    //for experimenting with optimizations
-    Func polynomial3 ("polynomial3");
-    polynomial3(x, y) = 2.1f + 2.001f*x + 2.001f*y + 2.000001f*x*x + 2.000001f*x*y
-                     + 2.000001f*y*y +  2.000000001f*x*x*x + 2.000000001f*x*x*y + 2.000000001f*x*y*y
-                     + 2.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial4 ("polynomial4");
-    polynomial4(x, y) = 3.1f + 3.001f*x + 3.001f*y + 3.000001f*x*x + 3.000001f*x*y
-                     + 3.000001f*y*y +  3.000000001f*x*x*x + 3.000000001f*x*x*y + 3.000000001f*x*y*y
-                     + 3.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial5 ("polynomial5");
-    polynomial5(x, y) = 4.1f + 4.001f*x + 4.001f*y + 4.000001f*x*x + 4.000001f*x*y
-                     + 4.000001f*y*y +  4.000000001f*x*x*x + 4.000000001f*x*x*y + 4.000000001f*x*y*y
-                     + 4.000000001f*y*y*y;
-*/
-
-
-    //compute output image and variance
-/*    Func polynomial1 ("polynomial1");
-    polynomial1(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial2 ("polynomial2");
-    polynomial2(x, y) = 0.1f + 1.001f*x + 1.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial3 ("polynomial3");
-    polynomial3(x, y) = 0.1f + 2.001f*x + 2.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial4 ("polynomial4");
-    polynomial4(x, y) = 0.1f + 3.001f*x + 3.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial5 ("polynomial5");
-    polynomial5(x, y) = 0.1f + 4.001f*x + 4.001f*y + 0.000001f*x*x + 0.000001f*x*y
-                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
-                     + 0.000000001f*y*y*y;
-
-
-    Func polynomial1 ("polynomial1");
-    polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.000004f*x*x + 0.000005f*x*y
-                     + 0.000006f*y*y +  0.000000007f*x*x*x + 0.000000008f*x*x*y + 0.000000009f*x*y*y
-                     + 0.0000000011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial2 ("polynomial2");
-    polynomial2(x, y) = 1.1f + 1.002f*x + 1.003f*y + 1.000004f*x*x + 1.000005f*x*y
-                     + 1.000006f*y*y +  1.000000007f*x*x*x + 1.000000008f*x*x*y + 1.000000009f*x*y*y
-                     + 1.0000000011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial3 ("polynomial3");
-    polynomial3(x, y) = 2.1f + 2.002f*x + 2.003f*y + 2.000004f*x*x + 2.000005f*x*y
-                     + 2.000006f*y*y +  2.000000007f*x*x*x + 2.000000008f*x*x*y + 2.000000009f*x*y*y
-                     + 2.0000000011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial4 ("polynomial4");
-    polynomial4(x, y) = 3.1f + 3.002f*x + 3.003f*y + 3.000004f*x*x + 3.000005f*x*y
-                     + 3.000006f*y*y +  3.000000007f*x*x*x + 3.000000008f*x*x*y + 3.000000009f*x*y*y
-                     + 3.0000000011f*y*y*y;
-
-    //for experimenting with optimizations
-    Func polynomial5 ("polynomial5");
-    polynomial5(x, y) = 4.1f + 4.002f*x + 4.003f*y + 4.000004f*x*x + 4.000005f*x*y
-                     + 4.000006f*y*y +  4.000000007f*x*x*x + 4.000000008f*x*x*y + 4.000000009f*x*y*y
-                     + 4.0000000011f*y*y*y;
-*/

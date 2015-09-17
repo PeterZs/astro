@@ -21,9 +21,18 @@ using namespace Halide;
 using Halide::Image;
 
 #define PI_FLOAT 3.14159265359f //
-
-
 #define NUMBER_OF_RUNS 5 //number of runs when performance testing
+
+//Each output mask pixel is the bitwise OR of each input mask pixel that
+//overlaps a nonzero kernel element for the given output pixel.
+//If OR_ALL_MASK_PIXELS is true, all mask pixels overlapping a kernel 
+//element will be ORed without checking whether the kernel element is zero.
+//Gaussians only reach zero at infinity, so this should technically be ok.
+//The LSST implementation appears to calculate the kernel with doubles
+//and OR when the double is nonzero, but this cutoff seems arbitrary.
+//Look into an appropriate cutoff value close to zero.
+#define OR_ALL_MASK_PIXELS true
+
 
 // from lesson_12_using_the_gpu.cpp
 // We're going to want to schedule a pipeline in several ways, so we
@@ -31,7 +40,7 @@ using Halide::Image;
 // times with different schedules.
 
 // Define some Vars to use.
-Var x, y, i_v, y_0, yi;
+Var x, y, i, j, i_v, y_0, yi;
 
 
 
@@ -44,39 +53,26 @@ public:
         float uuv_, float uvv_, float vvv_): a(a_),  u(u_),  v(v_),  uu(uu_),  
         uv(uv_), vv(vv_),  uuu(uuu_), uuv(uuv_),  uvv(uvv_),  vvv(vvv_) {}
 
-//    Halide::Expr operator()(Halide::Var x, Halide::Var y){
     Halide::Expr operator()(){
         return (a + u*x + v*y + uu*x*x + uv*x*y + vv*y*y + uuu*x*x*x + uuv*x*x*y +
                     uvv*x*y*y + vvv*y*y*y);
     }
-
 
 private:
     float a, u, v, uu, uv, vv, uuu, uuv, uvv, vvv;
 
 };
 
-//returns the third degree polynomial given by the input coefficients as a Halide Expr
-Halide::Expr getHalidePolynomial(float a, float u, float v, float uu, float uv, float vv,
-    float uuu, float uuv, float uvv, float vvv){
-    return (a + u*x + v*y + uu*x*x + uv*x*y + vv*y*y + uuu*x*x*x + uuv*x*x*y +uvv*x*y*y +
-        vvv*y*y*y);
-}
-
-//returns the third degree polynomial with coefficients given by the input vector
-//as a Halide Expr
-Halide::Expr getHalidePolynomial(vector<float> coefficients){
-    if(coefficients.size() != 10)
-        cout << "Error getHalidePolynomial, coefficient vector does not have 10 coefficients" << endl;
-    return (coefficients[0] + coefficients[1]*x + coefficients[2]*y + coefficients[3]*x*x +
-    coefficients[4]*x*y + coefficients[5]*y*y + coefficients[6]*x*x*x + coefficients[7]*x*x*y +
-    coefficients[8]*x*y*y + coefficients[9]*y*y*y);
-}
-
 //Abstract base class for 2 dimensional kernels
 class kernel2D{
 public:
+    //return a Halide Expr for the kernel at location (i, j) in the kernel
     virtual Halide::Expr operator()(int i, int j) = 0;
+
+    //return a Halide Expr for the kernel in terms of Vars i and j
+    //used for interpolation
+    virtual Halide::Expr operator()() = 0;
+
 };
 
 //Represents a 2 dimensional gaussian with standard deviations sigmaI and sigmaJ in its
@@ -89,6 +85,13 @@ public:
         : sigmaI(sigmaI_), sigmaJ(sigmaJ_), theta(theta_){}
 
     Halide::Expr operator()(int i, int j){
+        return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
+                    /(2*sigmaI*sigmaI))
+                    *exp(-((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
+                    /(2*sigmaJ*sigmaJ)) / (2.0f*PI_FLOAT*sigmaI*sigmaJ));
+    }
+
+    Halide::Expr operator()(){
         return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
                     /(2*sigmaI*sigmaI))
                     *exp(-((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
@@ -113,6 +116,15 @@ public:
             , spatialTheta(spatialTheta_){}
 
     Halide::Expr operator()(int i, int j){
+        return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
+                    (i*cos(spatialTheta()) + j*sin(spatialTheta()))) / 
+                    (2*spatialSigmaI()*spatialSigmaI()))
+                    * exp(-((j*cos(spatialTheta()) - i*sin(spatialTheta())) * 
+                    (j*cos(spatialTheta()) - i*sin(spatialTheta()))) / 
+                    (2*spatialSigmaJ()*spatialSigmaJ())));
+    }
+
+    Halide::Expr operator()(){
         return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
                     (i*cos(spatialTheta()) + j*sin(spatialTheta()))) / 
                     (2*spatialSigmaI()*spatialSigmaI()))
@@ -165,15 +177,9 @@ private:
 //generally faster on the CPU but slower on the GPU.
 class generalKernel {
 public:
-//    Func polynomial1, polynomial2, polynomial3, polynomial4, polynomial5, kernel1, kernel2,
-//    kernel3, kernel4, kernel5, blurImage1, blurImage2, blurImage3, blurImage4, blurImage5,
-//    combined_output, image_output, variance_output,
-//    mask_output;
-
     Image<float> image;
     Image<float> variance;
     Image<uint16_t> mask;
-
 
     //output planes calculated using test_performance_cpu()
     Image<float> image_output_cpu;
@@ -187,18 +193,25 @@ public:
 
     generalKernel(string imageLocation, int kernelSize);
 
-    //for tuples/no tuples derived classes to call in their constructor 
-    generalKernel(){}
-
     //Functions to create specific types of kernels
 
     virtual void createLinearCombinationProgram(
-        vector<polynomial> weights, vector<kernel2D *> kernels) = 0;
+        vector<polynomial> weights, vector<kernel2D *> kernels);
 
-    //Save .fits images using the LSST stack
+    virtual void createLinearCombinationProgramWithInterpolation(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+
+    virtual void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+
+    //Save .fits images using the LSST stack (does nothing if STANDALONE defined)
     //Before running, load the LSST stack using
     //$ source ./loadLSST.bash
     //$ setup afw -t v10_1   (or appropriate version, also may work with simply $setup afw)
+    //save_fits_image("folder1/folder2/imageName") will save image to:
+    //folder1/folder2/imageNameKERNELSIZExKERNELSIZE.fits
+    //e.g. for the case of a 5x5 kernel:
+    //folder1/folder2/imageName5x5.fits
     void save_fits_image(string imageDestination);
 
     //Kernel schedules
@@ -223,6 +236,9 @@ protected:
     //Functions used to bound input planes
     Func image_bounded, variance_bounded, mask_bounded;
 
+    //For interpolation
+    Func compressedKernel;
+
     //Halide expressions used to compute output functions
     Expr total_image_output;
     Expr total_variance_output;
@@ -235,9 +251,17 @@ public:
         : generalKernel(imageLocation, kernelSize){}
 
     void createLinearCombinationProgram(vector<polynomial> weights, vector<kernel2D *> kernels);
+    void createLinearCombinationProgramWithInterpolation(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+    void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+
 
     void schedule_for_cpu();
     void schedule_for_gpu();
+
+    void schedule_interpolation_for_cpu();
+
 
     void test_performance_cpu();
     void test_performance_gpu();
@@ -254,9 +278,17 @@ public:
         : generalKernel(imageLocation, kernelSize){}
 
     void createLinearCombinationProgram(vector<polynomial> weights, vector<kernel2D *> kernels);
+    void createLinearCombinationProgramWithInterpolation(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+    void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+
 
     void schedule_for_cpu();
     void schedule_for_gpu();
+
+    void schedule_interpolation_for_cpu();
+
 
     void test_performance_cpu();
     void test_performance_gpu();
