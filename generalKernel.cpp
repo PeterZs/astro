@@ -278,12 +278,26 @@ void generalKernel::createLinearCombinationProgramWithInterpolation(std::vector<
     total_mask_output = cast<uint16_t>(0);
     for(int i = -bounding_box; i <= bounding_box; i++){
         for(int j = -bounding_box; j <= bounding_box; j++){
+            /*
             total_image_output += image_bounded(x + i, y + j)*interpKernel(x, y, i, j);
             total_variance_output += variance_bounded(x + i, y + j)*interpKernel(x, y, i, j)
                                     *interpKernel(x, y, i, j);
 
             if(!OR_ALL_MASK_PIXELS){
                 total_mask_output = select(interpKernel(x, y, i, j) == 0.0f, total_mask_output,
+                                    total_mask_output | mask_bounded(x + i, y + j));
+            }  
+            else{ 
+                total_mask_output = total_mask_output | mask_bounded(x + i, y + j);  
+            } 
+            */
+            //Debugging below
+            total_image_output += image_bounded(x + i, y + j)*normalizedTotalKernel(x, y, i, j);
+            total_variance_output += variance_bounded(x + i, y + j)*normalizedTotalKernel(x, y, i, j)
+                                    *normalizedTotalKernel(x, y, i, j);
+
+            if(!OR_ALL_MASK_PIXELS){
+                total_mask_output = select(normalizedTotalKernel(x, y, i, j) == 0.0f, total_mask_output,
                                     total_mask_output | mask_bounded(x + i, y + j));
             }  
             else{ 
@@ -1038,7 +1052,7 @@ void checkInterpolation(){
 
     std::string curKernelSize = std::to_string(5);
     p1.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
-        ".fits", 0);
+        ".fits", 1);
 
 
     cout << "testing linear interpolation of analytic kernel, normalization before interpolation" << endl;
@@ -1050,12 +1064,12 @@ void checkInterpolation(){
     p2.test_performance_cpu();
 
     p2.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
-        ".fits", 0);
+        ".fits", 1);
 }
 
 
 int main(int argc, char *argv[]) {
-    checkLinearComboAndAnalytic();
+//    checkLinearComboAndAnalytic();
     checkInterpolation();
 
 }
