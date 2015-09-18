@@ -449,6 +449,12 @@ void generalKernelWithTuples::schedule_interpolation_for_cpu() {
     combined_output.vectorize(x, 16);  
 
     compressedKernel.compute_root();
+    // Split the y coordinate of the consumer into strips of 4 scanlines:
+    compressedKernel.split(y, y_0, yi, 32);
+    // Compute the strips using a thread pool and a task queue.
+    compressedKernel.parallel(y_0);
+    // Vectorize across x by a factor of four.
+    compressedKernel.vectorize(x, 16);  
 }
 
 void generalKernelWithoutTuples::schedule_for_cpu() {
@@ -1058,7 +1064,7 @@ void checkInterpolation(){
   
     cout << "testing linear interpolation of analytic kernel, normalization after interpolation, with tuples" << endl;
 
-    generalKernelWithoutTuples p0("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
+    generalKernelWithTuples p0("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
     p0.createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(weights1, singleKernel, 10); //interpolate 10x10 grid
     p0.schedule_interpolation_for_cpu();
     p0.debug();
@@ -1071,7 +1077,7 @@ void checkInterpolation(){
 
     cout << "testing linear interpolation of analytic kernel, normalization before interpolation, with tuples" << endl;
 
-    generalKernelWithoutTuples p1("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
+    generalKernelWithTuples p1("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
     p1.createLinearCombinationProgramWithInterpolation(weights1, singleKernel, 10);
     p1.schedule_interpolation_for_cpu();
     p1.debug();
