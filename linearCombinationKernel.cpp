@@ -8,7 +8,7 @@
 //
 //LD_LIBRARY_PATH=./bin:Linux64/afw/10.1+1/lib/:Linux64/daf_persistence/10.1+1/lib/:Linux64/daf_base/10.1+2/lib/:Linux64/boost/1.55.0.1.lsst2+3/lib/:Linux64/xpa/2.1.15.lsst2/lib/:Linux64/pex_policy/10.1+1/lib/:Linux64/pex_logging/10.1+1/lib/:Linux64/utils/10.1+1/lib/:Linux64/pex_exceptions/10.1+1/lib/:Linux64/base/10.1+1/lib/:Linux64/wcslib/4.14+7/lib/:Linux64/cfitsio/3360.lsst1/lib/:Linux64/gsl/1.16.lsst1/lib/:Linux64/minuit2/5.28.00/lib:Linux64/mysql/5.1.65.lsst2/lib/ ./linearCombinationKernel
 
-#define TESTING_GPU //define to simplify GPU testing
+//#define TESTING_GPU //define to simplify GPU testing
 //#define STANDALONE
 
 #if !defined(STANDALONE) && !defined(TESTING_GPU)
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     int boundingBox = 5; 
-    Var x, y, i, j, i_v, y0, yi;
+    Var x, y, i_v, y0, yi;
 
     //compute output image and variance
     //Polynomials that define weights of spatially variant linear combination of 5 kernels
@@ -497,7 +497,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-	imOut.writeFits("./halideLinearCombination.fits");
+	imOut.writeFits("./halideLinearCombination5x5.fits");
 #endif
 
 }

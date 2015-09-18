@@ -221,6 +221,8 @@ public:
     Image<float> variance_output_gpu;
     Image<uint16_t> mask_output_gpu;
 
+    double avg_cpu_time;
+    double avg_gpu_time;
     generalKernel(string imageLocation, int kernelSize);
 
     //Functions to create specific types of kernels
@@ -233,6 +235,16 @@ public:
 
     virtual void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(
         vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+
+
+    //older versions that had different performance, stuck them in here for side by side
+    //comparison
+    virtual void createLinearCombinationProgramWithInterpolation1(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+
+    virtual void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation1(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+
 
     //Save .fits images using the LSST stack (does nothing if STANDALONE defined)
     //Before running, load the LSST stack using
@@ -249,13 +261,15 @@ public:
     virtual void schedule_for_gpu() = 0;
 
     //Benchmark kernels and get output image
-    virtual void test_performance_cpu() = 0;
-    virtual void test_performance_gpu() = 0;
+    virtual void test_performance_cpu(int printInfo) = 0;
+    virtual void test_performance_gpu(int printInfo) = 0;
 
     //check whether the CPU output matches the .fits image
     //referred to by referenceLocation
     //enter 0 for little information, 1 for more details
     void test_correctness(string referenceLocation, int details);
+    //just print tab separated numbers in a table format
+    void test_correctness_clean(string referenceLocation);
 
     virtual void debug();
 
@@ -285,6 +299,10 @@ public:
         vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
     void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(
         vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+    void createLinearCombinationProgramWithInterpolation1(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+    void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation1(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
 
 
     void schedule_for_cpu();
@@ -292,9 +310,10 @@ public:
 
     void schedule_interpolation_for_cpu();
 
-
-    void test_performance_cpu();
-    void test_performance_gpu();
+    //print performance times for printInfo == 1
+    //do no print for printInfo == 0
+    void test_performance_cpu(int printInfo);
+    void test_performance_gpu(int printInfo);
 
     void debug();
 
@@ -314,6 +333,10 @@ public:
         vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
     void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(
         vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+    void createLinearCombinationProgramWithInterpolation1(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
+    void createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation1(
+        vector<polynomial> weights, vector<kernel2D *> kernels, int interpDist);
 
 
     void schedule_for_cpu();
@@ -321,9 +344,10 @@ public:
 
     void schedule_interpolation_for_cpu();
 
-
-    void test_performance_cpu();
-    void test_performance_gpu();
+    //print performance times for printInfo == 1
+    //do no print for printInfo == 0
+    void test_performance_cpu(int printInfo);
+    void test_performance_gpu(int printInfo);
 
     void debug();
 

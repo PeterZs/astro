@@ -18,8 +18,9 @@
 #include "linearCombinationKernel1.h"
 
 
-convolveKernelsSeparatelyThenCombinePipeline::convolveKernelsSeparatelyThenCombinePipeline(Image<float> image_, Image<float> variance_,
-    Image<uint16_t> mask_): image(image_), variance(variance_), mask(mask_) {
+convolveKernelsSeparatelyThenCombinePipeline::convolveKernelsSeparatelyThenCombinePipeline(
+    Image<float> image_, Image<float> variance_, Image<uint16_t> mask_, bool useTuples_):
+    image(image_), variance(variance_), mask(mask_), useTuples(useTuples_) {
 
     //Polynomials that define weights of spatially varying linear combination of 5 kernels
     polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.4f*x*x + 0.5f*x*y
@@ -171,10 +172,25 @@ convolveKernelsSeparatelyThenCombinePipeline::convolveKernelsSeparatelyThenCombi
 //                        + polynomial5(x, y));
 
     //Write real variance, mask, if this looks promising
+    variance_bounded = BoundaryConditions::repeat_edge(variance);
+    mask_bounded = BoundaryConditions::repeat_edge(mask);
+
     Expr fakeVar = variance_bounded(x, y) + 2;
     Expr fakeMask = mask_bounded(x, y) + 2;
 //    combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
-    combined_output(x, y) = Tuple(blur_image_help, fakeVar, fakeMask);
+
+    //Evaluate image, mask, and variance planes concurrently using a tuple
+    if(useTuples){
+//        combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, blur_mask_help);
+        combined_output(x, y) = Tuple(blur_image_help, fakeVar, fakeMask);
+    }
+    else{
+        imageOut(x, y) = blur_image_help;
+        varianceOut(x, y) = fakeVar;
+        maskOut(x, y) = fakeMask;
+//        varianceOut(x, y) = blur_variance_help;
+//        maskOut(x, y) = blur_mask_help;
+    }
 }
 
 void convolveKernelsSeparatelyThenCombinePipeline::debug(){
@@ -188,11 +204,11 @@ void convolveKernelsSeparatelyThenCombinePipeline::debug(){
 
 void convolveKernelsSeparatelyThenCombinePipeline::schedule_for_cpu() {
     // Split the y coordinate of the consumer into strips of 4 scanlines:
-    combined_output.split(y, y_0, yi, 4);
+    combined_output.split(y, y_0, yi, 32);
     // Compute the strips using a thread pool and a task queue.
     combined_output.parallel(y_0);
     // Vectorize across x by a factor of four.
-    combined_output.vectorize(x, 8);
+    combined_output.vectorize(x, 16);
 
 //      blurImage1.compute_root();
 //      blurImage2.compute_root();
@@ -203,8 +219,23 @@ void convolveKernelsSeparatelyThenCombinePipeline::schedule_for_cpu() {
 
 // Now a schedule that uses CUDA or OpenCL.
 void convolveKernelsSeparatelyThenCombinePipeline::schedule_for_gpu() {
-    // Compute curved in 2D 8x8 tiles using the GPU.
-    combined_output.gpu_tile(x, y, 8, 8);
+   // Compute curved in 2D 8x8 tiles using the GPU.
+
+    if(useTuples){
+        combined_output.gpu_tile(x, y, 16, 16);
+    }
+
+    else{
+        blurImage1.compute_root();
+        blurImage2.compute_root();
+        blurImage3.compute_root();
+        blurImage4.compute_root();
+        blurImage5.compute_root();
+
+        imageOut.gpu_tile(x, y, 16, 16);
+        varianceOut.gpu_tile(x, y, 16, 16);
+        maskOut.gpu_tile(x, y, 16, 16);
+    }
 
     // JIT-compile the pipeline for the GPU. CUDA or OpenCL are
     // not enabled by default. We have to construct a Target
@@ -235,14 +266,21 @@ void convolveKernelsSeparatelyThenCombinePipeline::schedule_for_gpu() {
     // performance though, so we'll leave it commented out.
     // target.set_feature(Target::Debug);
 
-    combined_output.compile_jit(target);
+    if(useTuples){
+        combined_output.compile_jit(target);
+    }
+    else{
+        imageOut.compile_jit(target);
+        varianceOut.compile_jit(target);
+        maskOut.compile_jit(target);
+    }
 }
 
 void convolveKernelsSeparatelyThenCombinePipeline::test_performance_cpu() {
     // Benchmark the pipeline.
-    image_output(image.width(), image.height());
-    variance_output(variance.width(), variance.height());
-    mask_output(mask.width(), mask.height());
+    Image<float> image_output(image.width(), image.height());
+    Image<float> variance_output(variance.width(), variance.height());
+    Image<uint16_t> mask_output(mask.width(), mask.height());
 
     Realization r = combined_output.realize(image.width(), image.height());
     image_output = r[0];
@@ -328,13 +366,124 @@ void convolveKernelsSeparatelyThenCombinePipeline::test_performance_cpu() {
 }
 
 
+void convolveKernelsSeparatelyThenCombinePipeline::test_performance_gpu() {
+    // Test the performance of the pipeline.
+    // If we realize curved into a Halide::Image, that will
+    // unfairly penalize GPU performance by including a GPU->CPU
+    // copy in every run. Halide::Image objects always exist on
+    // the CPU.
+
+    // Halide::Buffer, however, represents a buffer that may
+    // exist on either CPU or GPU or both.
+//    Buffer output(UInt(8), input.width(), input.height(), input.channels());
+
+    // Run the filter once to initialize any GPU runtime state.
+    Image<float> image_output(image.width(), image.height());
+    Image<float> variance_output(variance.width(), variance.height());
+    Image<uint16_t> mask_output(mask.width(), mask.height());
+
+    //need to define r outside of if statement, won't compile without assignment
+    Func fake;
+    fake(x,y) = 0;
+    Realization r = fake.realize(1, 1);
+
+    if(useTuples){
+        r = combined_output.realize(image.width(), image.height());
+        image_output = r[0];
+        variance_output = r[1];
+        mask_output = r[2];
+    }
+
+    else{
+        image_gpu_output = Buffer(Float(32), image.width(), image.height());
+        variance_gpu_output = Buffer(Float(32), image.width(), image.height());
+        mask_gpu_output = Buffer(UInt(16), image.width(), image.height());        
+    }
+
+    // Now take the best of 3 runs for timing.
+    double best_time;
+    double t1;
+    double t2;
+    double elapsed;
+    for (int i = 0; i < 3; i++) {
+
+        if(useTuples){
+            t1 = current_time();
+            // Run the filter 100 times.
+            for (int j = 0; j < 100; j++) {
+                combined_output.realize(image.width(), image.height());
+            }
+            // Force any GPU code to finish by copying the buffer back to the CPU.
+    //        output.copy_to_host();
+            //Does this do the equivalent?
+            image_output = r[0];
+            variance_output = r[1];
+            mask_output = r[2];
+            t2 = current_time();
+        }
+        else{
+            t1 = current_time();
+            // Run the filter 100 times.
+            for (int j = 0; j < 100; j++) {
+                imageOut.realize(image_gpu_output);
+                varianceOut.realize(variance_gpu_output);
+                maskOut.realize(mask_gpu_output);
+            }
+            // Force any GPU code to finish by copying the buffer back to the CPU.
+            image_gpu_output.copy_to_host();
+            variance_gpu_output.copy_to_host();
+            mask_gpu_output.copy_to_host();
+
+            t2 = current_time();
+
+        }
+        elapsed = (t2 - t1)/100;
+        if (i == 0 || elapsed < best_time) {
+            best_time = elapsed;
+        }
+    }
+
+    printf("%1.4f milliseconds\n", best_time);
+}
 
 
-convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipeline(Image<float> image_, Image<float> variance_,
-    Image<uint16_t> mask_): image(image_), variance(variance_), mask(mask_) {
 
-    //Polynomials that define weights of spatially variant linear combination of 5 kernels
-    polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.4f*x*x + 0.5f*x*y
+
+convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipeline(
+    Image<float> image_, Image<float> variance_, Image<uint16_t> mask_, bool useTuples_):
+    image(image_), variance(variance_), mask(mask_), useTuples(useTuples_) {
+    //original LSST example
+    Func polynomial1 ("polynomial1");
+    polynomial1(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
+                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
+                     + 0.000000001f*y*y*y;
+
+    //for experimenting with optimizations
+    Func polynomial2 ("polynomial2");
+    polynomial2(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
+                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
+                     + 0.000000001f*y*y*y;
+
+    //for experimenting with optimizations
+    Func polynomial3 ("polynomial3");
+    polynomial3(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
+                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
+                     + 0.000000001f*y*y*y;
+
+    //for experimenting with optimizations
+    Func polynomial4 ("polynomial4");
+    polynomial4(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
+                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
+                     + 0.000000001f*y*y*y;
+
+    //for experimenting with optimizations
+    Func polynomial5 ("polynomial5");
+    polynomial5(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
+                     + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
+                     + 0.000000001f*y*y*y;
+
+    //Polynomials that define weights of spatially varying linear combination of 5 kernels
+/*    polynomial1(x, y) = 0.1f + 0.002f*x + 0.003f*y + 0.4f*x*x + 0.5f*x*y
                      + 0.6f*y*y +  0.0007f*x*x*x + 0.0008f*x*x*y + 0.0009f*x*y*y
                      + 0.00011f*y*y*y;
 
@@ -358,7 +507,7 @@ convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipe
     polynomial5(x, y) = 4.1f + 4.002f*x + 4.003f*y + 4.4f*x*x + 4.5f*x*y
                      + 4.6f*y*y +  4.0007f*x*x*x + 4.0008f*x*x*y + 4.0009f*x*y*y
                      + 4.00011f*y*y*y;
-
+*/
     //5 Kernels that will be weighted by their corresponding polynomials to produce
     //the total kernel
     //Kernel #1
@@ -396,8 +545,6 @@ convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipe
                     /(2*sigmaX4*sigmaX4)) / (sqrtf(2*M_PI)*sigmaX4))
                     *(exp(-((j*cos(theta4) - i*sin(theta4))*(j*cos(theta4) - i*sin(theta4)))
                     /(2*sigmaY4*sigmaY4)) / (sqrtf(2*M_PI)*sigmaY4));
-
-
     //Kernel #5
     float sigmaX5 = 4.0f;
     float sigmaY5 = 4.0f;
@@ -406,8 +553,7 @@ convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipe
                     /(2*sigmaX5*sigmaX5)) / (sqrtf(2*M_PI)*sigmaX5))
                     *(exp(-((j*cos(theta5) - i*sin(theta5))*(j*cos(theta5) - i*sin(theta5)))
                     /(2*sigmaY5*sigmaY5)) / (sqrtf(2*M_PI)*sigmaY5));
-    
-    
+
     //Compute output image plane
     image_bounded = BoundaryConditions::repeat_edge(image);    
     Expr blur_image_help = 0.0f;
@@ -424,13 +570,9 @@ convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipe
     }
     blur_image_help = blur_image_help/norm;
 
-
-
-
     //Compute output variance plane
     variance_bounded = BoundaryConditions::repeat_edge(variance);
     Expr blur_variance_help = 0.0f;
-//    Expr vNorm2 = 0.0f;
     for(int i = -BOUNDING_BOX; i <= BOUNDING_BOX; i++){
         for(int j = -BOUNDING_BOX; j <= BOUNDING_BOX; j++){
             blur_variance_help += variance_bounded(x + i, y + j) * (polynomial1(x, y)*kernel1(i, j) +
@@ -439,15 +581,9 @@ convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipe
                 *(polynomial1(x, y)*kernel1(i, j) +
                 polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
                 polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j)); 
-//            vNorm2 += (polynomial1(x, y)*kernel1(i, j) + polynomial2(x, y)*kernel2(i, j) + 
-//                polynomial3(x, y)*kernel3(i, j) + polynomial4(x, y)*kernel4(i, j) + 
-//                polynomial5(x, y)*kernel5(i, j));
         }
     }
-//    blur_variance_help = blur_variance_help/(norm(x,y)*norm(x,y));
     blur_variance_help = blur_variance_help/(norm*norm);
-        
-
 
     //Compute output mask plane
     mask_bounded = BoundaryConditions::repeat_edge(mask);    
@@ -462,22 +598,53 @@ convolveOneSpatiallyVaryingKernelPipeline::convolveOneSpatiallyVaryingKernelPipe
     }
 
     //Evaluate image, mask, and variance planes concurrently using a tuple
-    combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, blur_mask_help);
+    if(useTuples){
+        combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, blur_mask_help);
+    }
+    else{
+        imageOut(x, y) = blur_image_help;
+        varianceOut(x, y) = blur_variance_help;
+        maskOut(x, y) = blur_mask_help;
+    }
 }
 
 void convolveOneSpatiallyVaryingKernelPipeline::schedule_for_cpu() {
-    // Split the y coordinate of the consumer into strips of 4 scanlines:
-    combined_output.split(y, y_0, yi, 4);
-    // Compute the strips using a thread pool and a task queue.
-    combined_output.parallel(y_0);
-    // Vectorize across x by a factor of four.
-    combined_output.vectorize(x, 8);
+    if(useTuples){
+        // Split the y coordinate of the consumer into strips of 4 scanlines:
+        combined_output.split(y, y_0, yi, 32);
+        // Compute the strips using a thread pool and a task queue.
+        combined_output.parallel(y_0);
+        // Vectorize across x by a factor of four.
+        combined_output.vectorize(x, 16);
+    }
+    else{
+        imageOut.split(y, y_0, yi, 32);
+        imageOut.parallel(y_0);
+        imageOut.vectorize(x, 16);
+
+        varianceOut.split(y, y_0, yi, 32);
+        varianceOut.parallel(y_0);
+        varianceOut.vectorize(x, 16);
+
+        maskOut.split(y, y_0, yi, 32);
+        maskOut.parallel(y_0);
+        maskOut.vectorize(x, 16);
+    }   
 }
 
 // Now a schedule that uses CUDA or OpenCL.
 void convolveOneSpatiallyVaryingKernelPipeline::schedule_for_gpu() {
     // Compute curved in 2D 8x8 tiles using the GPU.
-    combined_output.gpu_tile(x, y, 8, 8);
+
+    if(useTuples){
+        combined_output.gpu_tile(x, y, 16, 16);
+    }
+
+    else{
+        imageOut.gpu_tile(x, y, 16, 16);
+        varianceOut.gpu_tile(x, y, 16, 16);
+        maskOut.gpu_tile(x, y, 16, 16);
+    }
 
     // JIT-compile the pipeline for the GPU. CUDA or OpenCL are
     // not enabled by default. We have to construct a Target
@@ -508,7 +675,14 @@ void convolveOneSpatiallyVaryingKernelPipeline::schedule_for_gpu() {
     // performance though, so we'll leave it commented out.
     // target.set_feature(Target::Debug);
 
-    combined_output.compile_jit(target);
+    if(useTuples){
+        combined_output.compile_jit(target);
+    }
+    else{
+        imageOut.compile_jit(target);
+        varianceOut.compile_jit(target);
+        maskOut.compile_jit(target);
+    }
 }
 
 void convolveOneSpatiallyVaryingKernelPipeline::test_performance_cpu() {
@@ -516,14 +690,31 @@ void convolveOneSpatiallyVaryingKernelPipeline::test_performance_cpu() {
 
  
     // Benchmark the pipeline.
-    image_output(image.width(), image.height());
-    variance_output(variance.width(), variance.height());
-    mask_output(mask.width(), mask.height());
+    Image<float> image_output(image.width(), image.height());
+    Image<float> variance_output(variance.width(), variance.height());
+    Image<uint16_t> mask_output(mask.width(), mask.height());
 
-    Realization r = combined_output.realize(image.width(), image.height());
-    image_output = r[0];
-    variance_output = r[1];
-    mask_output = r[2];
+
+    //need to define r outside of if statement, won't compile without assignment
+    Func fake;
+    fake(x,y) = 0;
+    Realization r = fake.realize(1, 1);
+
+    if(useTuples){
+        r = combined_output.realize(image.width(), image.height());
+        image_output = r[0];
+        variance_output = r[1];
+        mask_output = r[2];
+    }
+    else{
+        Image<float> fake_output(image.width(), image.height());
+        imageOut.realize(fake_output);
+
+        image_output(image.width(), image.height());
+        imageOut.realize(image_output);
+        varianceOut.realize(variance_output);
+        maskOut.realize(mask_output);
+    }
 
     double average = 0;
     double min;
@@ -531,13 +722,31 @@ void convolveOneSpatiallyVaryingKernelPipeline::test_performance_cpu() {
     double imgTime;
     double varTime;
     double maskTime;
+
+    double t1;
+    double t2;
+    double t3;
+    double t4;
+    double curTime;
     for (int i = 0; i < NUMBER_OF_RUNS; i++) {
-        double t1 = current_time();
-        r = combined_output.realize(image.width(), image.height());
-        double t2 = current_time();
-        double t3 = current_time();
-        double t4 = current_time();
-        double curTime = (t4-t1);
+        if(useTuples){
+            t1 = current_time();
+            r = combined_output.realize(image.width(), image.height());
+            t2 = current_time();
+            t3 = current_time();
+            t4 = current_time();
+            curTime = (t4-t1);
+        }
+        else{
+            t1 = current_time();
+            imageOut.realize(image_output);
+            t2 = current_time();
+            varianceOut.realize(variance_output);
+            t3 = current_time();
+            maskOut.realize(mask_output);
+            t4 = current_time();
+            curTime = (t4-t1);
+        }
         average += curTime;
         if(i == 0){
             min = curTime;
@@ -577,32 +786,66 @@ void convolveOneSpatiallyVaryingKernelPipeline::test_performance_gpu() {
 //    Buffer output(UInt(8), input.width(), input.height(), input.channels());
 
     // Run the filter once to initialize any GPU runtime state.
-    Realization r = combined_output.realize(image.width(), image.height());
-    image_output = r[0];
-    variance_output = r[1];
-    mask_output = r[2];
+    Image<float> image_output(image.width(), image.height());
+    Image<float> variance_output(variance.width(), variance.height());
+    Image<uint16_t> mask_output(mask.width(), mask.height());
 
-    // Now take the best of 3 runs for timing.
-    double best_time;
-    for (int i = 0; i < 3; i++) {
+    //need to define r outside of if statement, won't compile without assignment
+    Func fake;
+    fake(x,y) = 0;
+    Realization r = fake.realize(1, 1);
 
-        double t1 = current_time();
-
-        // Run the filter 100 times.
-        for (int j = 0; j < 100; j++) {
-            combined_output.realize(image.width(), image.height());
-        }
-
-        // Force any GPU code to finish by copying the buffer back to the CPU.
-//        output.copy_to_host();
-        //Does this do the equivalent?
+    if(useTuples){
+        r = combined_output.realize(image.width(), image.height());
         image_output = r[0];
         variance_output = r[1];
         mask_output = r[2];
+    }
 
-        double t2 = current_time();
+    else{
+        image_gpu_output = Buffer(Float(32), image.width(), image.height());
+        variance_gpu_output = Buffer(Float(32), image.width(), image.height());
+        mask_gpu_output = Buffer(UInt(16), image.width(), image.height());        
+    }
 
-        double elapsed = (t2 - t1)/100;
+    // Now take the best of 3 runs for timing.
+    double best_time;
+    double t1;
+    double t2;
+    double elapsed;
+    for (int i = 0; i < 3; i++) {
+
+        if(useTuples){
+            t1 = current_time();
+            // Run the filter 100 times.
+            for (int j = 0; j < 100; j++) {
+                combined_output.realize(image.width(), image.height());
+            }
+            // Force any GPU code to finish by copying the buffer back to the CPU.
+    //        output.copy_to_host();
+            //Does this do the equivalent?
+            image_output = r[0];
+            variance_output = r[1];
+            mask_output = r[2];
+            t2 = current_time();
+        }
+        else{
+            t1 = current_time();
+            // Run the filter 100 times.
+            for (int j = 0; j < 100; j++) {
+                imageOut.realize(image_gpu_output);
+                varianceOut.realize(variance_gpu_output);
+                maskOut.realize(mask_gpu_output);
+            }
+            // Force any GPU code to finish by copying the buffer back to the CPU.
+            image_gpu_output.copy_to_host();
+            variance_gpu_output.copy_to_host();
+            mask_gpu_output.copy_to_host();
+
+            t2 = current_time();
+
+        }
+        elapsed = (t2 - t1)/100;
         if (i == 0 || elapsed < best_time) {
             best_time = elapsed;
         }
@@ -618,9 +861,31 @@ void convolveOneSpatiallyVaryingKernelPipeline::debug(){
     combined_output.compile_to_lowered_stmt("linearCombinationKernel1BlurImage.html", {image}, HTML);
 }
 
+void convolveOneSpatiallyVaryingKernelPipeline::test_correctness(Image<float> reference_output) {
+    Image<float> image_output(image.width(), image.height());
+    imageOut.realize(image_output);
 
+
+    // Check against the reference output.
+    for (int y = 0; y < image.height(); y++) {
+        for (int x = 0; x < image.width(); x++) {
+            if (image_output(x, y) != reference_output(x, y)) {
+                printf("Mismatch between output (%f) and "
+                       "reference output (%f) at %d, %d\n",
+                       image_output(x, y),
+                       reference_output(x, y),
+                       x, y);
+                exit(0);
+            }
+        }
+    }
+    cout << "done checking correctness" << endl;
+
+}
 
 int main(int argc, char *argv[]) {
+
+    cout << "Kernel size = " << (BOUNDING_BOX*2 + 1) << " x " << (BOUNDING_BOX*2 + 1) <<endl;
 
 #ifndef STANDALONE
     auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
@@ -647,10 +912,45 @@ int main(int argc, char *argv[]) {
         }
     }
 #endif
-    convolveOneSpatiallyVaryingKernelPipeline p1(image, variance, mask);
+//    convolveKernelsSeparatelyThenCombinePipeline p0(image, variance, mask, false);
+//    cout << "convolveKernelsSeparatelyThenCombinePipeline On GPU without tuples: " << endl;
+//    p0.schedule_for_gpu();
+//    p0.test_performance_gpu();
 
+/*    convolveOneSpatiallyVaryingKernelPipeline p1(image, variance, mask, true);
+    cout << "On CPU with tuples: " << endl;
     p1.schedule_for_cpu();
     p1.test_performance_cpu();
+
+    convolveOneSpatiallyVaryingKernelPipeline p2(image, variance, mask, true);
+    cout << "On GPU with tuples: " << endl;
+    p2.schedule_for_gpu();
+    p2.test_performance_gpu();
+*/
+    convolveOneSpatiallyVaryingKernelPipeline p3(image, variance, mask, false);
+    cout << "On CPU without tuples: " << endl;
+    p3.schedule_for_cpu();
+    p3.test_performance_cpu();
+
+//    convolveOneSpatiallyVaryingKernelPipeline p4(image, variance, mask, false);
+//    cout << "On GPU without tuples: " << endl;
+//    p4.schedule_for_gpu();
+//    p4.test_performance_gpu();
+
+    //Check GPU:
+    //Allocate an image that will store the correct image plane output 
+    //calculated on CPU
+    Image<float> reference_output_image(image.width(), image.height());
+    p3.imageOut.realize(reference_output_image);
+    //check it matches GPU calculation
+//    p4.test_correctness(reference_output_image);
+
+
+    //calculate variance/mask planes for writing out image
+    Image<float> reference_output_variance(image.width(), image.height());
+    Image<uint16_t> reference_output_mask(image.width(), image.height());
+    p3.varianceOut.realize(reference_output_variance);
+    p3.maskOut.realize(reference_output_mask);
 
 //    p1.schedule_for_gpu();
 //    p1.test_performance_gpu();
@@ -667,14 +967,16 @@ int main(int argc, char *argv[]) {
 
         for (int x = 0; x < imOut.getWidth(); x++){
             afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
-            curPixel(p1.image_output(x, y), p1.mask_output(x, y), p1.variance_output(x, y));
+            curPixel(reference_output_image(x, y), reference_output_mask(x, y),
+            reference_output_variance(x, y));
             (*inPtr) = curPixel;
             inPtr++;
 
         }
     }
-
-    imOut.writeFits("./halideLinearCombination1.fits");
+    std::string B_BOX_STRING = std::to_string(BOUNDING_BOX*2 + 1);
+    imOut.writeFits("./images/linearCombination/halideLinearCombination" + B_BOX_STRING +
+    "x" + B_BOX_STRING + ".fits");
 #endif
 
 }
@@ -683,7 +985,10 @@ int main(int argc, char *argv[]) {
 
 
 //Other polynomials
-/*    Func polynomial1 ("polynomial1");
+
+/*
+    //original LSST example
+    Func polynomial1 ("polynomial1");
     polynomial1(x, y) = 0.1f + 0.001f*x + 0.001f*y + 0.000001f*x*x + 0.000001f*x*y
                      + 0.000001f*y*y +  0.000000001f*x*x*x + 0.000000001f*x*x*y + 0.000000001f*x*y*y
                      + 0.000000001f*y*y*y;
