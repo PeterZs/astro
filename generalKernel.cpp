@@ -302,45 +302,18 @@ void generalKernel::createLinearCombinationProgramWithInterpolation(std::vector<
 //of size (interpDist x interpDist).
 void generalKernel::createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(std::vector<polynomial> weights,
     std::vector<kernel2D *> kernels, int interpDist){
-
     if(weights.size() != kernels.size()){
         cout << "ERROR, must supply equal number of weights and kernels" << endl;
         return;
     }
 
-    //Condensed version generalized for any number of kernels/weights
-    Expr blur_image_help = 0.0f;
-    Expr blur_variance_help = 0.0f;
-    Expr cur_kernel_location = 0.0f;
-    total_mask_output = cast<uint16_t>(0);  //make sure blur_mask_help has type uint16
-
-    //The original linear combination kernel function, normalized after linear combination.
-/*    Func normalizedTotalKernel;
-    normalizedTotalKernel(x, y, i, j) = 0.0f;
-    for(int i = -bounding_box; i <= bounding_box; i++){
-        for(int j = -bounding_box; j <= bounding_box; j++){
-            cur_kernel_location = 0.0f;
-            for(int h = 0; h < kernels.size(); h++){
-                cur_kernel_location += weights[h]()*(*kernels[h])(i, j);
-                norm += weights[h]()*(*kernels[h])(i, j);
-            }
-            normalizedTotalKernel(x, y, i, j) = cur_kernel_location;
-        }
-    }
-*/
-
-    Func kernel;
-
-
     Expr linear_combo_kernel = 0.0f;
     for(int h = 0; h < kernels.size(); h++){
         linear_combo_kernel += weights[h]()*(*kernels[h])();
     }
+
+    Func kernel;
     kernel(x, y, i, j) = linear_combo_kernel;
-
-
-
-
 
     //This is a compressed version of the original kernel that can be evaluated
     //compute_root() without computing the kernel at points that will not
@@ -351,22 +324,22 @@ void generalKernel::createLinearCombinationProgramWithInterpolationNormalizeAfte
     //Do the actual interpolation now
 
 //******************************Without the compressed kernel
-/*    Func interpKernel;
+    Func interpKernel;
     Expr xS = x%interpDist;
     Expr xG = interpDist - xS;
     Expr yS = y%interpDist;
     Expr yG = interpDist - yS;
 
-    Expr xInterpS = ((xG * normalizedTotalKernel(x - xS, y - yS, i, j)) + (xS * normalizedTotalKernel(x + xG, y - yS, i, j)))/interpDist;
-    Expr xInterpG = ((xG * normalizedTotalKernel(x - xS, y + yG, i, j)) + (xS * normalizedTotalKernel(x + xG, y + yG, i, j)))/interpDist;
+    Expr xInterpS = ((xG * kernel(x - xS, y - yS, i, j)) + (xS * kernel(x + xG, y - yS, i, j)))/interpDist;
+    Expr xInterpG = ((xG * kernel(x - xS, y + yG, i, j)) + (xS * kernel(x + xG, y + yG, i, j)))/interpDist;
 
     interpKernel(x, y, i, j) = ((yG * xInterpS) + (yS * xInterpG))/interpDist;
-*/
+
 //******************************DONE Without the compressed kernel
 
 
 //******************************With the compressed kernel
-    Func interpKernel;
+/*    Func interpKernel;
     Expr xS = x%interpDist;
     Expr xG = interpDist - xS;
     Expr yS = y%interpDist;
@@ -379,6 +352,7 @@ void generalKernel::createLinearCombinationProgramWithInterpolationNormalizeAfte
                      (xS * compressedKernel((x + xG)/interpDist, (y + yG)/interpDist, i, j))) / interpDist;
 
     interpKernel(x, y, i, j) = ((yG * xInterpS) + (yS * xInterpG))/interpDist;
+*/
 //******************************DONE With the compressed kernel
 
     //perform convolution with the interpolated kernel
@@ -405,6 +379,8 @@ void generalKernel::createLinearCombinationProgramWithInterpolationNormalizeAfte
     total_variance_output = total_variance_output/(norm*norm);
 
 }
+
+
 
 
 void generalKernelWithTuples::createLinearCombinationProgramWithInterpolation(std::vector<polynomial> weights,
@@ -462,22 +438,48 @@ void generalKernelWithTuples::schedule_for_cpu() {
     combined_output.parallel(y_0);
     // Vectorize across x by a factor of four.
     combined_output.vectorize(x, 16);  
+}
+
+void generalKernelWithTuples::schedule_interpolation_for_cpu() {
+    // Split the y coordinate of the consumer into strips of 4 scanlines:
+    combined_output.split(y, y_0, yi, 32);
+    // Compute the strips using a thread pool and a task queue.
+    combined_output.parallel(y_0);
+    // Vectorize across x by a factor of four.
+    combined_output.vectorize(x, 16);  
 
     compressedKernel.compute_root();
 }
 
 void generalKernelWithoutTuples::schedule_for_cpu() {
-    image_output.split(y, y_0, yi, 32);
+    image_output.split(y, y_0, yi, 10);
     image_output.parallel(y_0);
-    image_output.vectorize(x, 16);
+    image_output.vectorize(x, 8);
 
-    variance_output.split(y, y_0, yi, 32);
+    variance_output.split(y, y_0, yi, 10);
     variance_output.parallel(y_0);
-    variance_output.vectorize(x, 16);
+    variance_output.vectorize(x, 8);
 
-    mask_output.split(y, y_0, yi, 32);
+    mask_output.split(y, y_0, yi, 10);
     mask_output.parallel(y_0);
-    mask_output.vectorize(x, 16);  
+    mask_output.vectorize(x, 8);  
+}
+
+void generalKernelWithoutTuples::schedule_interpolation_for_cpu() {
+    image_output.split(y, y_0, yi, 10);
+    image_output.parallel(y_0);
+    image_output.vectorize(x, 8);
+
+    variance_output.split(y, y_0, yi, 10);
+    variance_output.parallel(y_0);
+    variance_output.vectorize(x, 8);
+
+    mask_output.split(y, y_0, yi, 10);
+    mask_output.parallel(y_0);
+    mask_output.vectorize(x, 8);  
+
+    compressedKernel.compute_root();
+
 }
 
 void generalKernelWithTuples::schedule_for_gpu() {
@@ -616,13 +618,21 @@ void generalKernelWithTuples::test_performance_cpu() {
 void generalKernelWithoutTuples::test_performance_cpu() {
     // Test the performance of the pipeline.
 
-
-    //set the output dimensions equal to the input dimensions by copying input
+//Maybe this is a problem?
+/*    //set the output dimensions equal to the input dimensions by copying input
     //planes into the output planes (image input is used for image and variance
     //output because the content doesn't matter, but the mask plane is a different type)
     image_output_cpu = image;
     variance_output_cpu = image;
     mask_output_cpu = mask;
+*/
+    Image<float> allocateImageOut(image.width(), image.height());
+    Image<float> allocateVarianceOut(image.width(), image.height());
+    Image<uint16_t> allocateMaskOut(image.width(), image.height());
+    image_output_cpu = allocateImageOut;
+    variance_output_cpu = allocateVarianceOut;
+    mask_output_cpu = allocateMaskOut;
+
 
     image_output.realize(image_output_cpu);
     variance_output.realize(variance_output_cpu);
@@ -744,11 +754,6 @@ void generalKernelWithoutTuples::test_performance_gpu() {
     Buffer variance_gpu_output = Buffer(Float(32), image.width(), image.height());
     Buffer mask_gpu_output = Buffer(UInt(16), image.width(), image.height());    
 
-    //need to define r outside of if statement, won't compile without assignment
-    Func fake;
-    fake(x,y) = 0;
-    Realization r = fake.realize(1, 1);
-
     // Run the filter once to initialize any GPU runtime state.
     // Also save the output image, variance, and mask planes
 
@@ -796,6 +801,23 @@ void generalKernel::debug(){
     // Print out pseudocode for the pipeline.
 //    combined_output.compile_to_lowered_stmt("generalKernelBlurImage.html", {image}, HTML);
 }
+
+void generalKernelWithTuples::debug(){
+    //Check out what is happening
+    compressedKernel.trace_realizations();
+    combined_output.print_loop_nest();
+    // Print out pseudocode for the pipeline.
+    combined_output.compile_to_lowered_stmt("generalKernelWithTuplesCombined_Output.html", {image}, HTML);
+}
+
+void generalKernelWithoutTuples::debug(){
+    //Check out what is happening
+    compressedKernel.trace_realizations();
+    image_output.print_loop_nest();
+    // Print out pseudocode for the pipeline.
+    image_output.compile_to_lowered_stmt("generalKernelBlurImageWithoutTuplesImage_Output.html", {image}, HTML);
+}
+
 
 void generalKernel::test_correctness(string referenceLocation, int details) {
 #ifndef STANDALONE //do nothing when STANDALONE is defined
@@ -861,7 +883,7 @@ void generalKernel::test_correctness(string referenceLocation, int details) {
             (*inPtr) = curPixel;
             inPtr++;
 //            if(abs(reference_image(x, y) - image_output_cpu(x, y))/min(abs(reference_image(x, y)), abs(image_output_cpu(x, y))) > maxImageDiffPercent){
-            if((abs(reference_image(x, y) - image_output_cpu(x, y))/min(abs(reference_image(x, y)), abs(image_output_cpu(x, y)))) > maxImageDiff){
+            if((abs(reference_image(x, y) - image_output_cpu(x, y))) > maxImageDiff){
                 maxImageDiffPercent = abs(reference_image(x, y) - image_output_cpu(x, y))/min(abs(reference_image(x, y)), abs(image_output_cpu(x, y)));
                 maxImageDiff = abs(reference_image(x, y) - image_output_cpu(x, y));
                 valueAtMaxImageDiff = min(abs(reference_image(x, y)), abs(image_output_cpu(x, y)));
@@ -885,6 +907,38 @@ void generalKernel::test_correctness(string referenceLocation, int details) {
                 mask_output_cpuVal = mask_output_cpu(x, y);
             }
 
+            //look into mask in more detail
+            if(details == 2){
+                if(reference_mask(x, y) != mask_output_cpu(x, y)){
+                    cout << "Halide and referene LSST disagree at (" << x << ", " << y << 
+                    ")  Halide mask = " << mask_output_cpu(x, y) << ", LSST mask = " << reference_mask(x, y)
+                    << endl;
+                    cout <<"Original mask plane around problem pixel:" << endl;
+                    for(int j = -bounding_box; j <=bounding_box; j++){
+                        for(int i = -bounding_box; i <=bounding_box; i++){
+                            cout << mask(x + i, y + j) << "\t";
+                        }
+                        cout << endl;
+                    }
+/*                    cout << endl << "Kernel around problem pixel: " << endl;
+                    for(int j = -bounding_box; j <=bounding_box; j++){
+                        for(int i = -bounding_box; i <=bounding_box; i++){
+                            cout << kernelOut(x, y, i, j) << "\t";
+                        }
+                        cout << endl;
+                    }
+                    cout << endl << "cKernel around problem pixel: " << endl;
+                    for(int j = -bounding_box; j <=bounding_box; j++){
+                        for(int i = -bounding_box; i <=bounding_box; i++){
+                            cout << cKernel(x, y, i, j) << "\t";
+                        }
+                        cout << endl;
+                    }
+*/
+                }
+            }
+
+
             if(abs(reference_image(x, y)) > maxImage1)
                 maxImage1 = abs(reference_image(x, y));
             if(abs(reference_variance(x, y)) > maxVariance1)
@@ -906,7 +960,7 @@ void generalKernel::test_correctness(string referenceLocation, int details) {
         cout << "Max (variance difference)/(smaller of two variance values) = " << maxVarianceDiffPercent << endl;
         cout << "Max mask difference = " << maxMaskDiff << endl;
     }
-    else if(details ==1){
+    else if(details > 0){
         cout << "Max (image difference)/(min img value) = " << maxImageDiffPercent << ",  Max image difference = " << maxImageDiff
         << ", value at max image difference = " << valueAtMaxImageDiff << " at position: (" << imageX << ", " << imageY
         << "), " << "variance at max difference = " << varianceAtMaxImgDiff << endl;
@@ -930,7 +984,7 @@ void generalKernel::test_correctness(string referenceLocation, int details) {
 
 
 
-void checkLinearComboAndAnalyticWithLSST(){
+void checkLinearComboAndAnalytic(){
     vector<int> kernelSizes;
     kernelSizes.resize(3);
     kernelSizes[0] = 5;
@@ -991,10 +1045,7 @@ void checkLinearComboAndAnalyticWithLSST(){
 }
 
 
-
-int main(int argc, char *argv[]) {
- 
-//    checkLinearComboAndAnalyticWithLSST();
+void checkInterpolation(){
     //test a single analytic kernel
 
     polynomial poly(0.1f, 0.0f, 0.0019476158495634653f, 0.000001f, 0.000001f, 0.000001f,
@@ -1005,30 +1056,63 @@ int main(int argc, char *argv[]) {
     vector<kernel2D *> singleKernel;
     singleKernel.push_back(&analyticKernel);
   
-    cout << "testing linear interpolation of analytic kernel, normalization after interpolation" << endl;
+    cout << "testing linear interpolation of analytic kernel, normalization after interpolation, with tuples" << endl;
 
-    generalKernelWithTuples p1("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
-    p1.createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(weights1, singleKernel, 10); //interpolate 10x10 grid
-    p1.schedule_for_cpu();
+    generalKernelWithoutTuples p0("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
+    p0.createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(weights1, singleKernel, 10); //interpolate 10x10 grid
+    p0.schedule_interpolation_for_cpu();
+    p0.debug();
+    p0.test_performance_cpu();
+
+    std::string curKernelSize = std::to_string(5);
+    p0.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
+        ".fits", 1);
+    cout << endl << endl;
+
+    cout << "testing linear interpolation of analytic kernel, normalization before interpolation, with tuples" << endl;
+
+    generalKernelWithoutTuples p1("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
+    p1.createLinearCombinationProgramWithInterpolation(weights1, singleKernel, 10);
+    p1.schedule_interpolation_for_cpu();
     p1.debug();
     p1.test_performance_cpu();
 
-    std::string curKernelSize = std::to_string(5);
     p1.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
-        ".fits", 0);
+        ".fits", 1);
+    cout << endl << endl;
 
 
-    cout << "testing linear interpolation of analytic kernel, normalization before interpolation" << endl;
+
+
+/*    cout << "testing linear interpolation of analytic kernel, normalization after interpolation, no tuples" << endl;
+    generalKernelWithoutTuples p1("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
+    p1.createLinearCombinationProgramWithInterpolationNormalizeAfterInterpolation(weights1, singleKernel, 10); //interpolate 10x10 grid
+    p1.schedule_interpolation_for_cpu();
+    p1.debug();
+    p1.test_performance_cpu();
+
+    p1.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
+        ".fits", 1);
+    p1.save_fits_image("./gkInterpWithoutTuples");
+*/
+
+/*    cout << "testing linear interpolation of analytic kernel, normalization before interpolation" << endl;
 
     generalKernelWithTuples p2("./images/calexp-004207-g3-0123.fits", 5); //create 5x5 kernel
     p2.createLinearCombinationProgramWithInterpolation(weights1, singleKernel, 10); //interpolate 10x10 grid
-    p2.schedule_for_cpu();
+    p2.schedule_interpolation_for_cpu();
     p2.debug();
     p2.test_performance_cpu();
 
     p2.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
-        ".fits", 0);
+        ".fits", 1);
+*/
+}
 
+
+int main(int argc, char *argv[]) {
+//    checkLinearComboAndAnalytic();
+    checkInterpolation();
 
 }
 

@@ -75,10 +75,15 @@ public:
 
 };
 
+
+
 //Represents a 2 dimensional gaussian with standard deviations sigmaI and sigmaJ in its
 //i and j dimensions respectively.  The guassian's i, j coordinate system is rotated by theta 
 //radians with respect to the image's x, y coordinate system.
-//The guassian is not normalized.
+//The guassian is normalized from -infinity to infinity, but will not be normalized for 
+//a finite kernel size.  Normalization could be removed to save dividing by the normalization
+//factor, but is here so that output matches the LSST reference more closely (this came up
+//as an issue when perfoming linear interpolation with a spatially varying gaussian)
 class gaussian2D: public kernel2D{
 public:
     gaussian2D(float sigmaI_, float sigmaJ_, float theta_)
@@ -107,13 +112,38 @@ private:
 //by polynomials sigmaI(x, y) and sigmaJ(x, y) in its i and j dimensions respectively.  The 
 //guassian's i, j coordinate system is rotated by spatialTheta(x, y) (a polynomial) radians 
 //with respect to the image's x, y coordinate system.
-//The guassian is not normalized.
+//The guassian is normalized from -infinity to infinity, but will not be normalized for 
+//a finite kernel size.  Normalization could be removed to save dividing by the normalization
+//factor, but is here so that output matches the LSST reference more closely (this came up
+//as an issue when perfoming linear interpolation with a spatially varying gaussian)
 class spatiallyVaryingGaussian2D: public kernel2D{
 public:
     spatiallyVaryingGaussian2D(polynomial spatialSigmaI_, polynomial spatialSigmaJ_, 
         polynomial spatialTheta_)
             : spatialSigmaI(spatialSigmaI_), spatialSigmaJ(spatialSigmaJ_)
             , spatialTheta(spatialTheta_){}
+
+/*    Halide::Expr operator()(int i, int j){
+        return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
+                    (i*cos(spatialTheta()) + j*sin(spatialTheta()))) / 
+                    (2*spatialSigmaI()*spatialSigmaI()))
+                    * exp(-((j*cos(spatialTheta()) - i*sin(spatialTheta())) * 
+                    (j*cos(spatialTheta()) - i*sin(spatialTheta()))) / 
+                    (2*spatialSigmaJ()*spatialSigmaJ())))
+                    /(2.0f*PI_FLOAT*spatialSigmaI()*spatialSigmaJ());
+    }
+
+    Halide::Expr operator()(){
+        return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
+                    (i*cos(spatialTheta()) + j*sin(spatialTheta()))) / 
+                    (2*spatialSigmaI()*spatialSigmaI()))
+                    * exp(-((j*cos(spatialTheta()) - i*sin(spatialTheta())) * 
+                    (j*cos(spatialTheta()) - i*sin(spatialTheta()))) / 
+                    (2*spatialSigmaJ()*spatialSigmaJ())))
+                    /(2.0f*PI_FLOAT*spatialSigmaI()*spatialSigmaJ());
+    }
+*/
+
 
     Halide::Expr operator()(int i, int j){
         return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
@@ -227,7 +257,7 @@ public:
     //enter 0 for little information, 1 for more details
     void test_correctness(string referenceLocation, int details);
 
-    void debug();
+    virtual void debug();
 
 protected:
     //Kernel is size (bounding_box*2 + 1) x (bounding_box*2 + 1)
@@ -266,6 +296,8 @@ public:
     void test_performance_cpu();
     void test_performance_gpu();
 
+    void debug();
+
 protected:
     //Tuple containing final output of all 3 planes
     Func combined_output;
@@ -292,6 +324,8 @@ public:
 
     void test_performance_cpu();
     void test_performance_gpu();
+
+    void debug();
 
 protected:
     //Final outputs of the planes without using a tuple
