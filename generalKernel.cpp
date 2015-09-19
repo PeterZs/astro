@@ -1311,7 +1311,7 @@ void generalKernel::test_correctness_clean(string referenceLocation) {
                 maxImageErrorPercent = abs(reference_image(x, y) - image_output_cpu(x, y))/abs(reference_image(x, y));
             }
             if((abs(reference_image(x, y) - image_output_cpu(x, y))/reference_variance(x, y)) > maxImageErrorAsPercentOfVariance){
-                maxImageError = abs(reference_image(x, y) - image_output_cpu(x, y))/reference_variance(x, y);
+                maxImageErrorAsPercentOfVariance = abs(reference_image(x, y) - image_output_cpu(x, y))/reference_variance(x, y);
             }
 
             if((abs(reference_variance(x, y) - variance_output_cpu(x, y))) > maxVarianceError){
