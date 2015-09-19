@@ -89,17 +89,32 @@ public:
     gaussian2D(float sigmaI_, float sigmaJ_, float theta_)
         : sigmaI(sigmaI_), sigmaJ(sigmaJ_), theta(theta_){}
 
+//    Halide::Expr operator()(int i, int j){
+//        return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
+//                    /(2*sigmaI*sigmaI))
+//                    *exp(-((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
+//                    /(2*sigmaJ*sigmaJ)) / (2.0f*PI_FLOAT*sigmaI*sigmaJ));
+//    }
+//
+//    Halide::Expr operator()(){
+//        return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
+//                    /(2*sigmaI*sigmaI))
+//                    *exp(-((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
+//                    /(2*sigmaJ*sigmaJ)) / (2.0f*PI_FLOAT*sigmaI*sigmaJ));
+//    }
+
+//Simplify the expression:
     Halide::Expr operator()(int i, int j){
         return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
-                    /(2*sigmaI*sigmaI))
-                    *exp(-((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
+                    /(2*sigmaI*sigmaI)
+                    -((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
                     /(2*sigmaJ*sigmaJ)) / (2.0f*PI_FLOAT*sigmaI*sigmaJ));
     }
 
     Halide::Expr operator()(){
         return(exp(-((i*cos(theta) + j*sin(theta))*(i*cos(theta) + j*sin(theta)))
-                    /(2*sigmaI*sigmaI))
-                    *exp(-((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
+                    /(2*sigmaI*sigmaI)
+                    -((j*cos(theta) - i*sin(theta))*(j*cos(theta) - i*sin(theta)))
                     /(2*sigmaJ*sigmaJ)) / (2.0f*PI_FLOAT*sigmaI*sigmaJ));
     }
 
@@ -146,21 +161,21 @@ public:
 
 
     Halide::Expr operator()(int i, int j){
-        return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
+        return exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
                     (i*cos(spatialTheta()) + j*sin(spatialTheta()))) / 
-                    (2*spatialSigmaI()*spatialSigmaI()))
-                    * exp(-((j*cos(spatialTheta()) - i*sin(spatialTheta())) * 
+                    (2*spatialSigmaI()*spatialSigmaI())
+                    - ((j*cos(spatialTheta()) - i*sin(spatialTheta())) * 
                     (j*cos(spatialTheta()) - i*sin(spatialTheta()))) / 
-                    (2*spatialSigmaJ()*spatialSigmaJ())));
+                    (2*spatialSigmaJ()*spatialSigmaJ()));
     }
 
     Halide::Expr operator()(){
-        return (exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
+        return exp(-((i*cos(spatialTheta()) + j*sin(spatialTheta())) *
                     (i*cos(spatialTheta()) + j*sin(spatialTheta()))) / 
-                    (2*spatialSigmaI()*spatialSigmaI()))
-                    * exp(-((j*cos(spatialTheta()) - i*sin(spatialTheta())) * 
+                    (2*spatialSigmaI()*spatialSigmaI())
+                    - ((j*cos(spatialTheta()) - i*sin(spatialTheta())) * 
                     (j*cos(spatialTheta()) - i*sin(spatialTheta()))) / 
-                    (2*spatialSigmaJ()*spatialSigmaJ())));
+                    (2*spatialSigmaJ()*spatialSigmaJ()));
     }
 
 private:

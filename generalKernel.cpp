@@ -1335,8 +1335,12 @@ void generalKernel::test_correctness_clean(string referenceLocation) {
  
 
 
-
-void checkLinearComboAndAnalytic(){
+//This function uses the coefficients originally in the timeSpatiallyVaryingConvolve.py
+//The timing comparison is unfair, because the same polynomial is passed as the coefficient
+//for each basis kernel in the linear combination and the same polynomial is used for 
+//all three parameters in the analytic kernel.  Halide can optimize this, but the LSST Stack
+//seems to have roughly the same performance
+void checkLinearComboAndAnalyticLsstOrigCoef(){
     vector<int> kernelSizes;
     kernelSizes.resize(3);
     kernelSizes[0] = 5;
@@ -1391,6 +1395,74 @@ void checkLinearComboAndAnalytic(){
         p2.schedule_for_cpu();
         p2.test_performance_cpu(1);
         p2.test_correctness("./lsstOutput/lsstAnalyticKernel" + curKernelSize + "x" + curKernelSize +
+            ".fits", 0);
+    }
+
+}
+
+//Same functionality as checkLinearComboAndAnalyticLsstOrigCoef(), but does not use
+//the same polynomials as parameters for a fair Halide/LSST timing comparison
+void checkLinearComboAndAnalyticDifferentCoef(){
+    vector<int> kernelSizes;
+    kernelSizes.resize(3);
+    kernelSizes[0] = 5;
+    kernelSizes[1] = 11;
+    kernelSizes[2] = 19;
+
+    for(int ii = 0; ii < kernelSizes.size(); ii++){
+        //test a linear combination of 5 spatially invariant gaussians
+        std::vector<polynomial> weights;
+        for(float i = 1; i < 6; i++){
+            polynomial curPol = polynomial(i + .001f, i + .002f, i + .003f, i + .004f,
+                i + .005f, i + .006f, i + .007f, i + .008f, i + .009f, i + .01f);
+            weights.push_back(curPol);
+        }
+
+        std::vector<kernel2D *> kernels;
+        kernels.resize(5);
+        gaussian2D k1 = gaussian2D(2.0f, 2.0f, 0.0f);
+        gaussian2D k2 = gaussian2D(.5f, 4.0f, 0.0f);
+        gaussian2D k3 = gaussian2D(.5f, 4.0f, M_PI/4.0f);
+        gaussian2D k4 = gaussian2D(.5f, 4.0f, M_PI/2.0f);
+        gaussian2D k5 = gaussian2D(4.0f, 4.0f, 0.0f);
+
+        kernels[0] = &k1; 
+        kernels[1] = &k2;
+        kernels[2] = &k3;
+        kernels[3] = &k4;
+        kernels[4] = &k5;
+
+        generalKernelWithTuples p1("./images/calexp-004207-g3-0123.fits", kernelSizes[ii]);
+        p1.createLinearCombinationProgram(weights, kernels);
+        p1.schedule_for_cpu();
+        p1.test_performance_cpu(1);
+
+        std::string curKernelSize = std::to_string(kernelSizes[ii]);
+        p1.test_correctness("./lsstOutputDifferentCoefficients/LinearCombinationKernel" + curKernelSize + "x" + curKernelSize +
+            ".fits", 0);
+
+
+
+        //test a single analytic kernel
+        cout << "testing analytic kernel" << endl;
+        std::vector<polynomial> analyticKernelParameters;
+        for(float i = 1; i <= 3; i++){
+            polynomial curPol = polynomial(i + .001f, i + .002f, i + .003f, i + .004f,
+                i + .005f, i + .006f, i + .007f, i + .008f, i + .009f, i + .01f);
+            analyticKernelParameters.push_back(curPol);
+        }
+        spatiallyVaryingGaussian2D analyticKernel(analyticKernelParameters[0], 
+            analyticKernelParameters[1], analyticKernelParameters[2]);
+        vector<polynomial> singleKernelWeight;
+        singleKernelWeight.push_back(polynomial(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f));
+        vector<kernel2D *> singleAnalyticKernel;
+        singleAnalyticKernel.push_back(&analyticKernel);
+       
+        generalKernelWithTuples p2("./images/calexp-004207-g3-0123.fits", kernelSizes[ii]);
+        p2.createLinearCombinationProgram(singleKernelWeight, singleAnalyticKernel);
+        p2.schedule_for_cpu();
+        p2.test_performance_cpu(1);
+        p2.test_correctness("./lsstOutputDifferentCoefficients/AnalyticKernel" + curKernelSize + "x" + curKernelSize +
             ".fits", 0);
     }
 
@@ -1482,8 +1554,9 @@ void checkInterpolation(){
 
 
 int main(int argc, char *argv[]) {
-//    checkLinearComboAndAnalytic();
-    checkInterpolation();
+//    checkLinearComboAndAnalyticLsstOrigCoef();
+//    checkInterpolation();
+    checkLinearComboAndAnalyticDifferentCoef();
 
 }
 
