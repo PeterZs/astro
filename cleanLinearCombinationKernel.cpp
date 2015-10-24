@@ -14,7 +14,7 @@
 //this kernel is a spatially varying linear combination of guassians 
 //that uses tuples for fast evaluation
 
-#define STANDALONE
+//#define STANDALONE
 #ifndef STANDALONE
 #include "lsst/afw/image.h"
 namespace afwImage = lsst::afw::image;
@@ -32,6 +32,15 @@ using Halide::Image;
 
 int main(int argc, char *argv[]) {
 
+#ifdef NAN
+    cout << NAN << endl;
+    float test = NAN;
+    cout << test << endl;
+#else
+    cout << "nan not defined" << endl;
+#endif
+
+
 #ifndef STANDALONE
     auto im = afwImage::MaskedImage<float>("./images/calexp-004207-g3-0123.fits");
     int width = im.getWidth(), height = im.getHeight();
@@ -41,7 +50,6 @@ int main(int argc, char *argv[]) {
 #endif
     printf("Loaded: %d x %d\n", width, height);
 
-    //store image data in img_var(x, y, 0) and variance data in img_var(x, y, 1)
     Image<float> image(width, height);
     Image<float> variance(width, height);
     Image<uint16_t> mask(width, height);
@@ -61,7 +69,7 @@ int main(int argc, char *argv[]) {
 
     //Kernel has dimensions (boundingBox*2 + 1) x (boundingBox*2 + 1)
     int boundingBox = 2; 
-    Var x, y, y0, yi;
+    Var x, y, i, j, y0, yi;
 
     //Five 3rd degree polynomials which will be used as spatially varying
     //coefficients in the linear combination of the five gaussian basis kernels
@@ -161,25 +169,114 @@ int main(int argc, char *argv[]) {
     Func maskOut ("maskOut");
     Expr maskOutHelp = cast<uint16_t>(0);
 
-    Expr curKernelVal;
-    for(int i = -boundingBox; i <= boundingBox; i++){
-        for(int j = -boundingBox; j <= boundingBox; j++){
-            curKernelVal = (polynomial1(x, y)*kernel1(i, j) +
-                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
-                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j));
-            blur_image_help += image_bounded(x + i, y + j)*curKernelVal; 
-            blur_variance_help += variance_bounded(x + i, y + j)*curKernelVal*curKernelVal; 
-            maskOutHelp = select(curKernelVal == 0.0f, maskOutHelp,
-                                maskOutHelp | mask_bounded(x + i, y + j));
-            norm += curKernelVal;
-        }
-    }
-    blur_image_help = blur_image_help/norm;
-    blur_variance_help = blur_variance_help/(norm*norm);
+//*********************************************************************************
 
+    Expr curKernelVal = (polynomial1(x, y)*kernel1(i, j) +
+        polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
+        polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j));
+
+    Func cur_Kernel_Val;
+    cur_Kernel_Val(x, y, i, j) = curKernelVal;
+
+    blur_image_help = image_bounded(x + i, y + j)*curKernelVal; 
+    blur_variance_help = variance_bounded(x + i, y + j)*curKernelVal*curKernelVal; 
+    maskOutHelp = select(curKernelVal == 0.0f, maskOutHelp,
+                        maskOutHelp | mask_bounded(x + i, y + j));
+
+
+    Func combined_blur_help;
+    combined_blur_help(x, y, i, j) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
+
+    RDom r(-2, 5, -2, 5);
     //Evaluate image, mask, and variance planes concurrently using a tuple
     Func combined_output ("combined_output");
-    combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
+    combined_output(x, y) = Tuple(1.0f, 2.0f, cast<uint16_t>(3));
+    combined_output(x, y)[0] = combined_output(x, y)[0] + 
+                                combined_blur_help(x, y, r.x, r.y)[0];
+    combined_output(x, y)[1] = combined_output(x, y)[1] +
+                                combined_blur_help(x, y, r.x, r.y)[1];
+    combined_output(x, y)[2] =  select(cur_Kernel_Val(x, y, i, j) == 0.0f,
+                                    combined_output(x, y)[2], 
+                                    combined_output(x, y)[2] |
+                                    combined_blur_help(x, y, r.x, r.y)[2]);
+
+    Func norm_func;
+    norm_func(x, y) = 0.0f;
+    norm_func(x, y) += cur_Kernel_Val(x, y, r.x, r.y);
+
+    combined_output(x, y)[0] = combined_output(x, y)[0]/norm_func(x, y);
+    combined_output(x, y)[1] = combined_output(x, y)[1]/(norm_func(x, y)*norm_func(x, y));
+
+    //set the image edges
+    //image edge should be NAN, but this produces errors 
+    Func setEdge;
+    setEdge(x, y) = x < boundingBox || y < boundingBox ||
+                     x > (width - 1 - boundingBox) || y > (height - 1 - boundingBox);
+
+    combined_output(x, y)[0] = select(setEdge(x, y), INFINITY, combined_output(x, y)[0]); 
+    combined_output(x, y)[1] = select(setEdge(x, y), INFINITY, combined_output(x, y)[1]); 
+    combined_output(x, y)[2] = select(setEdge(x, y), 16, combined_output(x, y)[2]); 
+//*********************************************************************************
+
+    Func image_output_func;
+    image_output_func(x, y) = 0.0f;
+    image_output_func(x, y) += combined_blur_help(x, y, r.x, r.y)[0];
+    image_output_func(x, y) = image_output_func(x, y) / norm_func(x, y);
+    image_output_func(x, y) = select(setEdge(x, y), INFINITY, image_output_func(x, y)); 
+
+
+//*********************************************************************************
+
+//    Expr curKernelVal;
+//    for(int i = -boundingBox; i <= boundingBox; i++){
+//        for(int j = -boundingBox; j <= boundingBox; j++){
+//
+//            curKernelVal = (polynomial1(x, y)*kernel1(i, j) +
+//                polynomial2(x, y)*kernel2(i, j) + polynomial3(x, y)*kernel3(i, j) + 
+//                polynomial4(x, y)*kernel4(i, j) + polynomial5(x, y)*kernel5(i, j));
+//            blur_image_help += image_bounded(x + i, y + j)*curKernelVal; 
+//            blur_variance_help += variance_bounded(x + i, y + j)*curKernelVal*curKernelVal; 
+//            maskOutHelp = select(curKernelVal == 0.0f, maskOutHelp,
+//                                maskOutHelp | mask_bounded(x + i, y + j));
+//
+//
+//            norm += curKernelVal;
+//        }
+//    }
+//    blur_image_help = blur_image_help/norm;
+//    blur_variance_help = blur_variance_help/(norm*norm);
+//
+//    //set the image edges
+//    //image edge should be NAN, but this produces errors 
+//    Expr setEdge = x < boundingBox || y < boundingBox ||
+//                     x > (width - 1 - boundingBox) || y > (height - 1 - boundingBox);
+//    blur_image_help = select(setEdge, INFINITY, blur_image_help); 
+//    blur_variance_help = select(setEdge, INFINITY, blur_variance_help);
+//    maskOutHelp = select(setEdge, 16, maskOutHelp);
+//
+//    //Evaluate image, mask, and variance planes concurrently using a tuple
+//    Func combined_output ("combined_output");
+//    combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
+//*********************************************************************************
+
+    //set the image edges
+//    for(int i = 0; i <= boundingBox; i++){
+//        combined_output(i, y)[0] = NAN;
+//        combined_output(width-1-i, y)[0] = NAN;
+//        combined_output(x, i)[0] = NAN;
+//        combined_output(x, height-1-i)[0] = NAN;
+//
+//        combined_output(i, y)[1] = INFINITY;
+//        combined_output(width-1-i, y)[1] = INFINITY;
+//        combined_output(x, i)[1] = INFINITY;
+//        combined_output(x, height-1-i)[1] = INFINITY;
+//
+//        combined_output(i, y)[2] = 16.0f;
+//        combined_output(width-1-i, y)[2] = 16.0f;
+//        combined_output(x, i)[2] = 16.0f;
+//        combined_output(x, height-1-i)[2] = 16.0f;
+//
+//    }
 
 
     // Split the y coordinate of the output into strips of 32 scanlines:
@@ -197,12 +294,13 @@ int main(int argc, char *argv[]) {
 
     //Compute all three planes simultaneously using a tuple
     //Evaluate once before benchmarking to force Halide to compile
-    Realization r = combined_output.realize(image.width(), image.height());
+    Realization rOut = combined_output.realize(image.width(), image.height());
     //Pull the three output planes out of the tuple
-    image_output = r[0];
-    variance_output = r[1];
-    mask_output = r[2];
+    image_output = rOut[0];
+    variance_output = rOut[1];
+    mask_output = rOut[2];
 
+//    image_output_func.realize(image_output); for debugging
     // Benchmark the pipeline.
     double mean = 0;
     double min;
@@ -210,7 +308,7 @@ int main(int argc, char *argv[]) {
     int numberOfRuns = 5;
     for (int i = 0; i < numberOfRuns; i++) {
         double t1 = current_time();
-        r = combined_output.realize(image.width(), image.height());
+        rOut = combined_output.realize(image.width(), image.height());
         double t2 = current_time();
         double curTime = (t2-t1);
         mean += curTime;
@@ -232,21 +330,64 @@ int main(int argc, char *argv[]) {
     " runs" << '\n';
 
 #ifndef STANDALONE
-    //write image out
+//    //write image out
+//    auto imOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
+//    for (int y = 0; y < imOut.getHeight(); y++) {
+//    	afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = imOut.x_at(0, y);
+//
+//        for (int x = 0; x < imOut.getWidth(); x++){
+//        	afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
+//            curPixel(image_output(x, y), mask_output(x, y), variance_output(x, y));
+//        	(*inPtr) = curPixel;
+//        	inPtr++;
+//
+//        }
+//    }
+//
+//	imOut.writeFits("./halideCleanLinearCombination5x5.fits");
+        //write image out
     auto imOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
     for (int y = 0; y < imOut.getHeight(); y++) {
-    	afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = imOut.x_at(0, y);
+        afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = imOut.x_at(0, y);
 
         for (int x = 0; x < imOut.getWidth(); x++){
-        	afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
-            curPixel(image_output(x, y), mask_output(x, y), variance_output(x, y));
-        	(*inPtr) = curPixel;
-        	inPtr++;
+            afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
+            curPixel(image_output(x, y), mask(x, y), variance(x, y));
+            (*inPtr) = curPixel;
+            inPtr++;
 
         }
     }
 
-	imOut.writeFits("./halideCleanLinearCombination5x5.fits");
+    auto varOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
+    for (int y = 0; y < imOut.getHeight(); y++) {
+        afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = varOut.x_at(0, y);
+
+        for (int x = 0; x < imOut.getWidth(); x++){
+            afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
+            curPixel(variance_output(x, y), mask(x, y), variance(x, y));
+            (*inPtr) = curPixel;
+            inPtr++;
+
+        }
+    }
+
+    auto maskOutPlane = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>(im.getWidth(), im.getHeight());
+    for (int y = 0; y < imOut.getHeight(); y++) {
+        afwImage::MaskedImage<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel>::x_iterator inPtr = maskOutPlane.x_at(0, y);
+
+        for (int x = 0; x < imOut.getWidth(); x++){
+            afwImage::pixel::SinglePixel<float, lsst::afw::image::MaskPixel, lsst::afw::image::VariancePixel> 
+            curPixel(mask_output(x, y), mask(x, y), variance(x, y));
+            (*inPtr) = curPixel;
+            inPtr++;
+
+        }
+    }
+
+    imOut.writeFits("./halideLinComboImage5x5.fits");
+    varOut.writeFits("./halideLinComboVar5x5.fits");
+    maskOutPlane.writeFits("./halideLinComboMask5x5.fits");
 #endif
 
 }
