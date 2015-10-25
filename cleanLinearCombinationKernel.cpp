@@ -190,22 +190,22 @@ int main(int argc, char *argv[]) {
     RDom r(-2, 5, -2, 5);
     //Evaluate image, mask, and variance planes concurrently using a tuple
     Func combined_output ("combined_output");
-    combined_output(x, y) = Tuple(1.0f, 2.0f, cast<uint16_t>(3));
-    combined_output(x, y)[0] = combined_output(x, y)[0] + 
-                                combined_blur_help(x, y, r.x, r.y)[0];
-    combined_output(x, y)[1] = combined_output(x, y)[1] +
-                                combined_blur_help(x, y, r.x, r.y)[1];
-    combined_output(x, y)[2] =  select(cur_Kernel_Val(x, y, i, j) == 0.0f,
-                                    combined_output(x, y)[2], 
-                                    combined_output(x, y)[2] |
-                                    combined_blur_help(x, y, r.x, r.y)[2]);
+    //combined_output(x, y) = Tuple(1.0f, 2.0f, cast<uint16_t>(3));
+    //combined_output(x, y)[0] = combined_output(x, y)[0] + 
+    //                            combined_blur_help(x, y, r.x, r.y)[0];
+    //combined_output(x, y)[1] = combined_output(x, y)[1] +
+    //                            combined_blur_help(x, y, r.x, r.y)[1];
+    //combined_output(x, y)[2] =  select(cur_Kernel_Val(x, y, i, j) == 0.0f,
+    //                                combined_output(x, y)[2], 
+    //                                combined_output(x, y)[2] |
+    //                                combined_blur_help(x, y, r.x, r.y)[2]);
 
     Func norm_func;
     norm_func(x, y) = 0.0f;
     norm_func(x, y) += cur_Kernel_Val(x, y, r.x, r.y);
 
-    combined_output(x, y)[0] = combined_output(x, y)[0]/norm_func(x, y);
-    combined_output(x, y)[1] = combined_output(x, y)[1]/(norm_func(x, y)*norm_func(x, y));
+    //combined_output(x, y)[0] = combined_output(x, y)[0]/norm_func(x, y);
+    //combined_output(x, y)[1] = combined_output(x, y)[1]/(norm_func(x, y)*norm_func(x, y));
 
     //set the image edges
     //image edge should be NAN, but this produces errors 
@@ -213,9 +213,9 @@ int main(int argc, char *argv[]) {
     setEdge(x, y) = x < boundingBox || y < boundingBox ||
                      x > (width - 1 - boundingBox) || y > (height - 1 - boundingBox);
 
-    combined_output(x, y)[0] = select(setEdge(x, y), INFINITY, combined_output(x, y)[0]); 
-    combined_output(x, y)[1] = select(setEdge(x, y), INFINITY, combined_output(x, y)[1]); 
-    combined_output(x, y)[2] = select(setEdge(x, y), 16, combined_output(x, y)[2]); 
+    //combined_output(x, y)[0] = select(setEdge(x, y), INFINITY, combined_output(x, y)[0]); 
+    //combined_output(x, y)[1] = select(setEdge(x, y), INFINITY, combined_output(x, y)[1]); 
+    //combined_output(x, y)[2] = select(setEdge(x, y), 16, combined_output(x, y)[2]); 
 //*********************************************************************************
 
     Func image_output_func;
@@ -224,6 +224,23 @@ int main(int argc, char *argv[]) {
     image_output_func(x, y) = image_output_func(x, y) / norm_func(x, y);
     image_output_func(x, y) = select(setEdge(x, y), INFINITY, image_output_func(x, y)); 
 
+    Func var_output_func;
+    var_output_func(x, y) = 0.0f;
+    var_output_func(x, y) += combined_blur_help(x, y, r.x, r.y)[1];
+    var_output_func(x, y) = var_output_func(x, y) / (norm_func(x, y) * norm_func(x, y));
+    var_output_func(x, y) = select(setEdge(x, y), INFINITY, var_output_func(x, y)); 
+
+    Func mask_output_func;
+    mask_output_func(x, y) = cast<uint16_t>(0);
+    mask_output_func(x, y) += combined_blur_help(x, y, r.x, r.y)[2];
+    mask_output_func(x, y) = select(setEdge(x, y), 16, mask_output_func(x, y)); 
+
+//    combined_output(x, y)[0] = image_output_func(x, y);
+//    combined_output(x, y)[1] = var_output_func(x, y);
+//    combined_output(x, y)[2] =  mask_output_func(x, y);
+
+    combined_output(x, y) = Tuple(image_output_func(x, y), var_output_func(x, y)
+                                    , mask_output_func(x, y));
 
 //*********************************************************************************
 
@@ -300,7 +317,9 @@ int main(int argc, char *argv[]) {
     variance_output = rOut[1];
     mask_output = rOut[2];
 
-//    image_output_func.realize(image_output); for debugging
+    image_output_func.realize(image_output); 
+    var_output_func.realize(variance_output); 
+    mask_output_func.realize(mask_output); 
     // Benchmark the pipeline.
     double mean = 0;
     double min;
@@ -308,7 +327,10 @@ int main(int argc, char *argv[]) {
     int numberOfRuns = 5;
     for (int i = 0; i < numberOfRuns; i++) {
         double t1 = current_time();
-        rOut = combined_output.realize(image.width(), image.height());
+//        rOut = combined_output.realize(image.width(), image.height());
+        image_output_func.realize(image_output); 
+        var_output_func.realize(variance_output); 
+        mask_output_func.realize(mask_output);
         double t2 = current_time();
         double curTime = (t2-t1);
         mean += curTime;
