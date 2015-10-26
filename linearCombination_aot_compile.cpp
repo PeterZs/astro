@@ -12,50 +12,49 @@
 
 
 #include <stdio.h>
-#include "Halide.h"
+#include <Halide.h>
 #include <bitset>
-#include "clock.h"
 using namespace std;
 using namespace Halide;
 
-using Halide::Image;
-
 int main(int argc, char *argv[]) {
 
-
+    const int num_kernels = 5;
+    
     ImageParam image(type_of<float>(), 2);
     ImageParam variance(type_of<float>(), 2);
     ImageParam mask(type_of<uint16_t>(), 2);
 
-    Param<float[][10]> polynomialCoefficients; //array with dimension [5][10]
+    ImageParam polynomialCoefficients(type_of<float>(), 2); //array with dimension [5][10]
     //Kernel parameters array with dimensions [5][3]
     //second dimension: sigmaX, sigmaY, theta
-    Param<float[][3]> kerParams; 
+    ImageParam kerParams(type_of<float>(), 2);
 
     //Kernel has dimensions (boundingBox*2 + 1) x (boundingBox*2 + 1)
     int boundingBox = 2; 
     Var x, y, i, j, y0, yi;
     float pi = 3.14159265359f;
 
-    Func polynomials[5];
-    for(int k = 0; k < 5; k++){
-        polynomials[k](x, y) = polynomialCoefficients[k][0] + 
-            polynomialCoefficients[k][1]*x + polynomialCoefficients[k][2]*y +
-            polynomialCoefficients[k][3]*x*x + polynomialCoefficients[k][4]*x*y + 
-            polynomialCoefficients[k][5]*y*y + polynomialCoefficients[k][6]*x*x*x +
-            polynomialCoefficients[k][7]*x*x*y + polynomialCoefficients[k][8]*x*y*y
-            + polynomialCoefficients[k][9]*y*y*y;
+    Func polynomials[num_kernels];
+    for(int k = 0; k < num_kernels; k++){
+        polynomials[k](x, y) = polynomialCoefficients(k,0) + 
+            polynomialCoefficients(k,1)*x + polynomialCoefficients(k,2)*y +
+            polynomialCoefficients(k,3)*x*x + polynomialCoefficients(k,4)*x*y + 
+            polynomialCoefficients(k,5)*y*y + polynomialCoefficients(k,6)*x*x*x +
+            polynomialCoefficients(k,7)*x*x*y + polynomialCoefficients(k,8)*x*y*y
+            + polynomialCoefficients(k,9)*y*y*y;
     }
 
-    Func kernels[5];
-    for(int k = 0; k < 5; k++){
-        kernel[k](i, j) = exp(-((i*cos(kerParams[k][2]) + j*sin(kerParams[k][2]))*
-                    (i*cos(kerParams[k][2]) + j*sin(kerParams[k][2])))
-                    / (2*kerParams[k][0]*kerParams[k][0])
-                    -((j*cos(kerParams[k][2]) - i*sin(kerParams[k][2]))*
-                    (j*cos(kerParams[k][2]) - i*sin(kerParams[k][2])))
-                    / (2*kerParams[k][1]*kerParams[k][1])) /
-                    (2.0f*pi*kerParams[k][0]*kerParams[k][1]);
+    Func kernels[num_kernels];
+    Var i,j;
+    for(int k = 0; k < num_kernels; k++){
+        kernels[k](i, j) = exp(-((i*cos(kerParams(k,2)) + j*sin(kerParams(k,2)))*
+                    (i*cos(kerParams(k,2)) + j*sin(kerParams(k,2))))
+                    / (2*kerParams(k,0)*kerParams(k,0))
+                    -((j*cos(kerParams(k,2)) - i*sin(kerParams(k,2)))*
+                    (j*cos(kerParams(k,2)) - i*sin(kerParams(k,2))))
+                    / (2*kerParams(k,1)*kerParams(k,1))) /
+                    (2.0f*pi*kerParams(k,0)*kerParams(k,1));
     }
 
 
@@ -80,7 +79,7 @@ int main(int argc, char *argv[]) {
     Expr curKernelVal = 0.0f;
     for(int i = -boundingBox; i <= boundingBox; i++){
         for(int j = -boundingBox; j <= boundingBox; j++){
-            for(int k = 0; k < 5; k++){
+            for(int k = 0; k < num_kernels; k++){
                 curKernelVal += polynomials[k](x, y)*kernels[k](i, j);
             }
             blur_image_help += image_bounded(x + i, y + j)*curKernelVal; 
@@ -97,7 +96,6 @@ int main(int argc, char *argv[]) {
     Func combined_output ("combined_output");
     combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
 
-
     // Split the y coordinate of the output into strips of 32 scanlines:
     combined_output.split(y, y0, yi, 32);
     // Compute the strips using a thread pool and a task queue.
@@ -105,9 +103,7 @@ int main(int argc, char *argv[]) {
     // Vectorize across x by a factor of eight.
     combined_output.vectorize(x, 8);
 
-
-    std::vector<Argument> args = {image, variance, mask, polynomialCoefficients,
-                                    kerParams};
+    std::vector<Argument> args = {image, variance, mask, polynomialCoefficients, kerParams};
     combined_output.compile_to_file("lincombo_aot", args);
 
     printf("Halide pipeline compiled, but not yet run.\n");
