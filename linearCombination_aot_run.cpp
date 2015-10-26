@@ -16,30 +16,6 @@ using namespace std;
 
 #include "lincombo_aot.h"
 
-
-
-void zero_buf_t(buffer_t &buf){
-    buf.dev = 0;
-    buf.host = 0;
-    buf.extent[0] = 0;
-    buf.extent[1] = 0;
-    buf.extent[2] = 0;
-    buf.extent[3] = 0;
-    buf.stride[0] = 0;
-    buf.stride[1] = 0;
-    buf.stride[2] = 0;
-    buf.stride[3] = 0;
-    buf.min[0] = 0;
-    buf.min[1] = 0;
-    buf.min[2] = 0;
-    buf.min[3] = 0;
-    buf.elem_size = 0;
-    buf.host_dirty = 0;
-    buf.dev_dirty = 0;
-
-}
-
-
 int main(int argc, char *argv[]) {
 
     cout << "hello!" << endl;
@@ -211,6 +187,8 @@ int main(int argc, char *argv[]) {
 
     int error = lincombo_aot(&image_buf, &variance_buf, &mask_buf,
                     &image_output_buf, &variance_output_buf, &mask_output_buf);
+
+
 
     if (error) {
         printf("Halide returned an error: %d\n", error);

@@ -34,7 +34,7 @@ int main(int argc, char *argv[]) {
 
     //Kernel has dimensions (boundingBox*2 + 1) x (boundingBox*2 + 1)
     int boundingBox = 2; 
-    Var x, y, y0, yi;
+    Var x, y, i, j, y0, yi;
     float pi = 3.14159265359f;
 
     Func polynomials[5];
