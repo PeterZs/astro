@@ -317,9 +317,6 @@ int main(int argc, char *argv[]) {
     variance_output = rOut[1];
     mask_output = rOut[2];
 
-    image_output_func.realize(image_output); 
-    var_output_func.realize(variance_output); 
-    mask_output_func.realize(mask_output); 
     // Benchmark the pipeline.
     double mean = 0;
     double min;
@@ -327,10 +324,7 @@ int main(int argc, char *argv[]) {
     int numberOfRuns = 5;
     for (int i = 0; i < numberOfRuns; i++) {
         double t1 = current_time();
-//        rOut = combined_output.realize(image.width(), image.height());
-        image_output_func.realize(image_output); 
-        var_output_func.realize(variance_output); 
-        mask_output_func.realize(mask_output);
+        rOut = combined_output.realize(image.width(), image.height());
         double t2 = current_time();
         double curTime = (t2-t1);
         mean += curTime;
