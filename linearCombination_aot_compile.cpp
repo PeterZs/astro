@@ -25,9 +25,9 @@ int main(int argc, char *argv[]) {
     ImageParam variance(type_of<float>(), 2);
     ImageParam mask(type_of<uint16_t>(), 2);
 
-    ImageParam polynomialCoefficients(type_of<float>(), 2); //array with dimension [5][10]
-    //Kernel parameters array with dimensions [5][3]
-    //second dimension: sigmaX, sigmaY, theta
+    ImageParam polynomialCoefficients(type_of<float>(), 2); //array with dimension [10][5]
+    //Kernel parameters array with dimensions [3][5]
+    //first dimension: sigmaX, sigmaY, theta
     ImageParam kerParams(type_of<float>(), 2);
 
     //Kernel has dimensions (boundingBox*2 + 1) x (boundingBox*2 + 1)
@@ -37,24 +37,24 @@ int main(int argc, char *argv[]) {
 
     Func polynomials[num_kernels];
     for(int k = 0; k < num_kernels; k++){
-        polynomials[k](x, y) = polynomialCoefficients(k,0) + 
-            polynomialCoefficients(k,1)*x + polynomialCoefficients(k,2)*y +
-            polynomialCoefficients(k,3)*x*x + polynomialCoefficients(k,4)*x*y + 
-            polynomialCoefficients(k,5)*y*y + polynomialCoefficients(k,6)*x*x*x +
-            polynomialCoefficients(k,7)*x*x*y + polynomialCoefficients(k,8)*x*y*y
-            + polynomialCoefficients(k,9)*y*y*y;
+        polynomials[k](x, y) = polynomialCoefficients(0,k) + 
+            polynomialCoefficients(1,k)*x + polynomialCoefficients(2,k)*y +
+            polynomialCoefficients(3,k)*x*x + polynomialCoefficients(4,k)*x*y + 
+            polynomialCoefficients(5,k)*y*y + polynomialCoefficients(6,k)*x*x*x +
+            polynomialCoefficients(7,k)*x*x*y + polynomialCoefficients(8,k)*x*y*y
+            + polynomialCoefficients(9,k)*y*y*y;
     }
 
     Func kernels[num_kernels];
-    Var i,j;
+
     for(int k = 0; k < num_kernels; k++){
-        kernels[k](i, j) = exp(-((i*cos(kerParams(k,2)) + j*sin(kerParams(k,2)))*
-                    (i*cos(kerParams(k,2)) + j*sin(kerParams(k,2))))
-                    / (2*kerParams(k,0)*kerParams(k,0))
-                    -((j*cos(kerParams(k,2)) - i*sin(kerParams(k,2)))*
-                    (j*cos(kerParams(k,2)) - i*sin(kerParams(k,2))))
-                    / (2*kerParams(k,1)*kerParams(k,1))) /
-                    (2.0f*pi*kerParams(k,0)*kerParams(k,1));
+        kernels[k](i, j) = exp(-((i*cos(kerParams(2,k)) + j*sin(kerParams(2,k)))*
+                    (i*cos(kerParams(2,k)) + j*sin(kerParams(2,k))))
+                    / (2*kerParams(0,k)*kerParams(0,k))
+                    -((j*cos(kerParams(2,k)) - i*sin(kerParams(2,k)))*
+                    (j*cos(kerParams(2,k)) - i*sin(kerParams(2,k))))
+                    / (2*kerParams(1,k)*kerParams(1,k))) /
+                    (2.0f*pi*kerParams(0,k)*kerParams(1,k));
     }
 
 
