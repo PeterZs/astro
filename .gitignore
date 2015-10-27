@@ -29,3 +29,5 @@
 *.dSYM
 *.standalone
 *.html
+lincombo_aot.h
+lincombo_aot_generate
