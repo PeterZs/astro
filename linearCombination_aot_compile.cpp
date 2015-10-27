@@ -20,7 +20,7 @@ using namespace Halide;
 int main(int argc, char *argv[]) {
 
     const int num_kernels = 5;
-    
+
     ImageParam image(type_of<float>(), 2);
     ImageParam variance(type_of<float>(), 2);
     ImageParam mask(type_of<uint16_t>(), 2);
@@ -31,15 +31,15 @@ int main(int argc, char *argv[]) {
     ImageParam kerParams(type_of<float>(), 2);
 
     //Kernel has dimensions (boundingBox*2 + 1) x (boundingBox*2 + 1)
-    int boundingBox = 2; 
+    int boundingBox = 2;
     Var x, y, i, j, y0, yi;
     float pi = 3.14159265359f;
 
     Func polynomials[num_kernels];
     for(int k = 0; k < num_kernels; k++){
-        polynomials[k](x, y) = polynomialCoefficients(k,0) + 
+        polynomials[k](x, y) = polynomialCoefficients(k,0) +
             polynomialCoefficients(k,1)*x + polynomialCoefficients(k,2)*y +
-            polynomialCoefficients(k,3)*x*x + polynomialCoefficients(k,4)*x*y + 
+            polynomialCoefficients(k,3)*x*x + polynomialCoefficients(k,4)*x*y +
             polynomialCoefficients(k,5)*y*y + polynomialCoefficients(k,6)*x*x*x +
             polynomialCoefficients(k,7)*x*x*y + polynomialCoefficients(k,8)*x*y*y
             + polynomialCoefficients(k,9)*y*y*y;
@@ -82,8 +82,8 @@ int main(int argc, char *argv[]) {
             for(int k = 0; k < num_kernels; k++){
                 curKernelVal += polynomials[k](x, y)*kernels[k](i, j);
             }
-            blur_image_help += image_bounded(x + i, y + j)*curKernelVal; 
-            blur_variance_help += variance_bounded(x + i, y + j)*curKernelVal*curKernelVal; 
+            blur_image_help += image_bounded(x + i, y + j)*curKernelVal;
+            blur_variance_help += variance_bounded(x + i, y + j)*curKernelVal*curKernelVal;
             maskOutHelp = select(curKernelVal == 0.0f, maskOutHelp,
                                 maskOutHelp | mask_bounded(x + i, y + j));
             norm += curKernelVal;
@@ -96,17 +96,38 @@ int main(int argc, char *argv[]) {
     Func combined_output ("combined_output");
     combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
 
+
+    /*
+     *
+     * Here is the definition of the Halide schedule.  The schedule
+     * describes how to implement the kernel described above.
+     *
+     */
+
     // Split the y coordinate of the output into strips of 32 scanlines:
     combined_output.split(y, y0, yi, 32);
-    // Compute the strips using a thread pool and a task queue.
+
+    // Compute the strips in parallel using all the machines
+    // cores. (You can think of processing a strip as a job that
+    // placed task queue, and serviced by a bunch of worker threads).
     combined_output.parallel(y0);
-    // Vectorize across x by a factor of eight.
+
+    // Vectorize across x loop by a factor of eight.
     combined_output.vectorize(x, 8);
+
+
+    /*
+     *
+     * The statement below generates the .o file (and .h) for the
+     * Halide kernel that can be linked against by other applications.
+     *
+     */
+
 
     std::vector<Argument> args = {image, variance, mask, polynomialCoefficients, kerParams};
     combined_output.compile_to_file("lincombo_aot", args);
 
-    printf("Halide pipeline compiled, but not yet run.\n");
+    printf("Halide pipeline has been compiled.  You can now link against the resulting .o\n");
 
     return 0;
 
