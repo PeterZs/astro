@@ -11,6 +11,23 @@
 // DYLD_LIBRARY_PATH=./bin:DarwinX86/afw/10.1+1/lib/:DarwinX86/daf_persistence/10.1+1/lib/:DarwinX86/daf_base/10.1+2/lib/:DarwinX86/boost/1.55.0.1.lsst2+3/lib/:DarwinX86/xpa/2.1.15.lsst2/lib/:DarwinX86/pex_policy/10.1+1/lib/:DarwinX86/pex_logging/10.1+1/lib/:DarwinX86/utils/10.1+1/lib/:DarwinX86/pex_exceptions/10.1+1/lib/:DarwinX86/base/10.1+1/lib/ ./lincombo_aot_run
 
 
+
+/*
+ *
+ * This file serves of an example of how to perform "ahead of time"
+ * (AOT) compilation of Halide pipelines for later use by other
+ * applications.
+ *
+ * The code defines a Halide pipeline and its accompanying schedule,
+ * and then compiles the resulting pipeline to a object file and
+ * associated C header file. The object file can then be linked into
+ * any application that wishes to use the resulting Halide pipeline.
+ *
+ * The Halide pipeline uses a spatial varying convolution kernel
+ * formed from the weighted combination of 5 basis kernels.
+ *
+ */
+
 #include <stdio.h>
 #include <Halide.h>
 #include <bitset>
@@ -29,6 +46,14 @@ int main(int argc, char *argv[]) {
     //Kernel parameters array with dimensions [5][3]
     //second dimension: sigmaX, sigmaY, theta
     ImageParam kerParams(type_of<float>(), 2);
+
+
+    /*
+     *
+     * First define the Halide pipeline.  This is the functional
+     * specification of the image processing algorithm.
+     *
+     */
 
     //Kernel has dimensions (boundingBox*2 + 1) x (boundingBox*2 + 1)
     int boundingBox = 2;
@@ -95,7 +120,6 @@ int main(int argc, char *argv[]) {
     //Evaluate image, mask, and variance planes concurrently using a tuple
     Func combined_output ("combined_output");
     combined_output(x, y) = Tuple(blur_image_help, blur_variance_help, maskOutHelp);
-
 
     /*
      *
