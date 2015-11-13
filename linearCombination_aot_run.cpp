@@ -222,7 +222,7 @@ int main(int argc, char *argv[]) {
     double mean = 0;
     double min;
     double max;
-    int numberOfRuns = 5;
+    int numberOfRuns = 100;
     for (int i = 0; i < numberOfRuns; i++) {
         double t1 = current_time();
         error = lincombo_aot(&image_buf, &variance_buf, &mask_buf,
@@ -248,7 +248,7 @@ int main(int argc, char *argv[]) {
     " runs" << '\n';
 
 #ifndef STANDALONE
-    bool writePlanesSeparately = true;
+    bool writePlanesSeparately = false;
     if(!writePlanesSeparately){
         //write image out
         auto imOut = afwImage::MaskedImage<float, lsst::afw::image::MaskPixel,
