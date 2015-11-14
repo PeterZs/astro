@@ -41,7 +41,6 @@ int main(int argc, char *argv[]) {
 #endif
     printf("Loaded: %d x %d\n", width, height);
 
-    //store image data in img_var(x, y, 0) and variance data in img_var(x, y, 1)
     Image<float> image(width, height);
     Image<float> variance(width, height);
     Image<uint16_t> mask(width, height);
@@ -60,7 +59,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     //Kernel has dimensions (boundingBox*2 + 1) x (boundingBox*2 + 1)
-    int boundingBox = 2; 
+    int boundingBox = 3; 
     //Interpolate the kernel over an interpDistxinterpDist grid where the
     //exact kernel is computed
     int interpDist = 10;
@@ -228,7 +227,7 @@ int main(int argc, char *argv[]) {
     // Vectorize across x by a factor of eight.
     combined_output.vectorize(x, 8);
 
-    compressedKernel.compute_root();
+    //compressedKernel.compute_root();
 
     //Create output images for the image, variance, and mask planes
     Image<float> image_output(image.width(), image.height());
