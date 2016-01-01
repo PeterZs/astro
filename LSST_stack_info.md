@@ -17,7 +17,7 @@ To run, if for example code in (*path to lsstsw*)/build/afw has been edited:
 	$ scons opt=3
 ```
 
-	The version number should match the version of an installed copy of afw located in (*path to lsstsw*)/stack that corresponds to the state of afw in (*path to lsstsw*)/build/afw before the edits were made.  To find the versions of afw that have been installed (with example output):
+The version number should match the version of an installed copy of afw located in (*path to lsstsw*)/stack that corresponds to the state of afw in (*path to lsstsw*)/build/afw before the edits were made.  To find the versions of afw that have been installed (with example output):
 
 ```
 	$ eups list afw
