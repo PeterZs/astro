@@ -1,4 +1,4 @@
-#Details on working with the LSST stack:
+##Details on working with the LSST stack:
 Download here: https://community.lsst.org/t/developing-software-with-the-dm-stack/126
 To run, use these commands in the lsstsw directory:
 $ source bin/setup.sh          (find this command using: $ ./bin/deploy)
