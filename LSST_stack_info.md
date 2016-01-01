@@ -1,8 +1,11 @@
 ##Details on working with the LSST stack:
-Download here: https://community.lsst.org/t/developing-software-with-the-dm-stack/126
-To run, use these commands in the lsstsw directory:
+-Download here: https://community.lsst.org/t/developing-software-with-the-dm-stack/126
+-To run, use these commands in the lsstsw directory:
+
+```
 $ source bin/setup.sh          (find this command using: $ ./bin/deploy)
-$ setup -r ./stack/DarwinX86/afw/(*version number inserted here*)/       
+$ setup -r ./stack/DarwinX86/afw/(*version number inserted here*)/      
+```
 (go to ./stack/DarwinX86/afw to see what version numbers are available)
 
 To edit the lsst code, edit the copy in (*path to lsstsw*)/build
