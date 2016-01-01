@@ -35,7 +35,7 @@ To call a function you created (for example terraFuncNameInC()) whose declaratio
 2. rename blurExampleTerraStandalone.o as blurExampleTerraStandalone.os and place it in /lsstsw/build/afw/src/math/blurExampleTerraStandalone.os
 
 3. add:
- #include "lsst/afw/math/Terra/blurExampleTerraStandalone.h" 
+ \#include "lsst/afw/math/Terra/blurExampleTerraStandalone.h" 
 to the file lsstsw/build/afw/src/math/detail/BasicConvolve.cc (and desired call)
 
 4. add:
