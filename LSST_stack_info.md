@@ -56,7 +56,7 @@ env = scripts.BasicSConstruct("afw")
 	$ setup -r . -t (*appropriate version number here*)
 	$ scons opt=3
 
-	-This may not be the best method, but seems to work.
+This may not be the best method, but seems to work.
 
 
 
