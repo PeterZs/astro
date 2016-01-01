@@ -3,10 +3,10 @@
 - To run, use these commands in the lsstsw directory:
 
 ```
-$ source bin/setup.sh          (find this command using: $ ./bin/deploy)
-$ setup -r ./stack/DarwinX86/afw/(*version number inserted here*)/      
+$ source bin/setup.sh          --(find this command using: $ ./bin/deploy)
+$ setup -r ./stack/DarwinX86/afw/(*version number inserted here*)/ 
+--(go to ./stack/DarwinX86/afw to see what version numbers are available)
 ```
-(go to ./stack/DarwinX86/afw to see what version numbers are available)
 
 To edit the lsst code, edit the copy in (*path to lsstsw*)/build
 	To run, if for example code in (*path to lsstsw*)/build/afw has been edited:
