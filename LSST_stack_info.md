@@ -89,7 +89,7 @@ jkuck@lightroast:~/lsstsw/pipe_tasks$ eups list pipe_tasks
    11.0-14-ga314014 	b1590
 jkuck@lightroast:~/lsstsw/pipe_tasks$ setup pipe_tasks -t b1590
 jkuck@lightroast:~/lsstsw/pipe_tasks$ setup -r . -k		// -r setup specified by the following path
-// -k keep everything else as is except what's //specified by this path and dependencies
+// -k keep everything else as is except what's specified by this path and dependencies
 
 jkuck@lightroast:~/lsstsw/pipe_tasks$ cd ../obs_decam/
 jkuck@lightroast:~/lsstsw/obs_decam$ setup -r . -k
